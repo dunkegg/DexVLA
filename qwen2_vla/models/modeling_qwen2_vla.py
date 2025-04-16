@@ -1675,6 +1675,7 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
         rope_deltas: Optional[torch.LongTensor] = None,
         actions: Optional[torch.LongTensor] = None,
         states: Optional[torch.FloatTensor] = None,
+        # distilbert_texts: Optional[List[str]] = None,
         is_pad: bool = False,
         is_eval: bool = False,
         tinyvla: bool = False,
@@ -1828,6 +1829,11 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
                 rope_deltas=rope_deltas,
             )
         
+        #wzj
+        # if hasattr(self, "distilbert_encoder") and distilbert_texts is not None:
+        #     distilbert_embeds = self.distilbert_encoder(distilbert_texts)
+        #     action_hidden_states = distilbert_embeds  # 用它代替原来的hidden_states
+        # elif 
         if self.using_film:
             action_hidden_states = self.film_forward(labels=labels, input_ids=input_ids,
                                                      hidden_states=hidden_states)
@@ -1989,8 +1995,20 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
                  pixel_values=None,
                  attention_mask=None,
                  image_grid_thw=None,
+                 input_texts=None,
                  ):
         input_ids = input_ids.to('cuda')
+
+
+        if self.config.model_args.using_distilbert and hasattr(self, "distilbert_encoder"):
+            # ✅ DistilBERT 处理文本输入
+            assert input_texts is not None, "input_texts is required for DistilBERT-based evaluation"
+            distilbert_embed = self.distilbert_encoder(input_texts)  # (B, 1, D)
+            # policy_head expects hidden_states shape: (B, 1, D)
+            output = self.policy_head(actions, distilbert_embed, states.to(distilbert_embed.dtype), is_pad)
+            return output, "[distilbert_no_generation]"
+
+
         with torch.inference_mode():
             outputs = self.generate(
                 input_ids,

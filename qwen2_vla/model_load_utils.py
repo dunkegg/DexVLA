@@ -13,6 +13,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAn
 import warnings
 import os
 from aloha_scripts.utils import *
+from policy_heads.distilbert import DistilBERTPolicyEncoder
 def find_all_linear_names(model, rank0_print, lora_module=None):
     cls = torch.nn.Linear
     lora_module_names = set()
@@ -221,6 +222,11 @@ def load_model(config=None, qwen2_vla_config=None, rank0_print=print, tokenizer=
     # action head need to be trained
     model.policy_head.requires_grad_(True)
 
+    # #wzj
+    # if training_args.enable_distilbert:
+    #     rank0_print(">>> Using DistilBERT encoder for stage1 <<<")
+    #     model.distilbert_encoder = DistilBERTPolicyEncoder(proj_dim=model.config.hidden_size).to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16,
+    #                                                                                            device=training_args.device)
     if config['model_args'].using_film:
         model.input_action_proj.requires_grad_(True)
         model.reasoning_action_proj.requires_grad_(True)

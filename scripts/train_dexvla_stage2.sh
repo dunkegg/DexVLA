@@ -4,14 +4,14 @@ LLM_MODEL_SIZE=2B
 
 ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
-DIT_PRETRAIN=/path/to/pretrained/ScaleDP
-MNOP=/path/to/pretrained/qwen2_vl # official qwen2_vl weights
+DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
+MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 
 TASKNAME=example_tasks
 
-OUTPUT=OUTPUTS/qwen_dexvla_stage_1
+OUTPUT=OUTPUT/qwen2_dexvla_stage_1
 
-deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
+deepspeed --master_port 29604 --num_gpus=1 --num_nodes=1 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning True \
   --lora_enable False \
@@ -28,6 +28,7 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --task_name ${TASKNAME} \
   --model_name_or_path $MNOP \
   --version v0 \
+  --enable_distilbert False \
   --tune_mm_mlp_adapter True \
   --freeze_vision_tower False \
   --freeze_backbone False \

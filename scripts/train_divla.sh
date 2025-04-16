@@ -2,13 +2,13 @@
 LLM=qwen2_vl
 LLM_MODEL_SIZE=2B
 
-ACTION_HEAD=unet_diffusion_policy  #unet_diffusion_policy or scale_dp_policy
+ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
-MNOP=/path/to/pretrained/qwen2_vl # official qwen2_vl weights
+MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 
 TASKNAME=example_tasks
 
-OUTPUT=/path/to/save/dir # Notice a standard OUTPUT dir should include key words "lora" and "qwen2_vl" for better load model(e.g. /root/path/lora_qwen2_vla_factory_sorting)
+OUTPUT=OUTPUT/qwen2_dexvla_stage_1 # Notice a standard OUTPUT dir should include key words "lora" and "qwen2_vl" for better load model(e.g. /root/path/lora_qwen2_vla_factory_sorting)
 
 deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --deepspeed scripts/zero2.json \
