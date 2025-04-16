@@ -9,7 +9,7 @@ MNOP=/path/to/pretrained/qwen2_vl # official qwen2_vl weights
 
 TASKNAME=example_tasks
 
-OUTPUT=/path/to/save/dir
+OUTPUT=OUTPUTS/qwen_dexvla_stage_1
 
 deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --deepspeed scripts/zero2.json \
@@ -37,7 +37,7 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --bf16 True \
   --output_dir $OUTPUT \
   --max_steps 100000 \
-  --per_device_train_batch_size 12 \
+  --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
   --save_steps 10000 \
@@ -50,7 +50,7 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --tf32 True \
   --model_max_length 2048 \
   --gradient_checkpointing True \
-  --dataloader_num_workers 8 \
+  --dataloader_num_workers 2 \
   --lazy_preprocess True \
   --policy_class $ACTION_HEAD \
   --concat "token_cat" \
