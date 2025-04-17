@@ -17,7 +17,7 @@ deepspeed --master_port 29604 --num_gpus=1 --num_nodes=1 ./train_vla.py \
   --lora_enable False \
   --action_dim 14 \
   --state_dim 14 \
-  --flash_attn True \
+  --flash_attn False \
   --chunk_size 50 \
   --load_pretrain_dit True \
   --pretrain_dit_path $DIT_PRETRAIN \

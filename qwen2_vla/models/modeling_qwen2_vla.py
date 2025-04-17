@@ -1999,14 +1999,14 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
                  ):
         input_ids = input_ids.to('cuda')
 
-
-        if self.config.model_args.using_distilbert and hasattr(self, "distilbert_encoder"):
-            # ✅ DistilBERT 处理文本输入
-            assert input_texts is not None, "input_texts is required for DistilBERT-based evaluation"
-            distilbert_embed = self.distilbert_encoder(input_texts)  # (B, 1, D)
-            # policy_head expects hidden_states shape: (B, 1, D)
-            output = self.policy_head(actions, distilbert_embed, states.to(distilbert_embed.dtype), is_pad)
-            return output, "[distilbert_no_generation]"
+        # wzj
+        # if self.config.model_args.using_distilbert and hasattr(self, "distilbert_encoder"):
+        #     # ✅ DistilBERT 处理文本输入
+        #     assert input_texts is not None, "input_texts is required for DistilBERT-based evaluation"
+        #     distilbert_embed = self.distilbert_encoder(input_texts)  # (B, 1, D)
+        #     # policy_head expects hidden_states shape: (B, 1, D)
+        #     output = self.policy_head(actions, distilbert_embed, states.to(distilbert_embed.dtype), is_pad)
+        #     return output, "[distilbert_no_generation]"
 
 
         with torch.inference_mode():
