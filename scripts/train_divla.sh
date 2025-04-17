@@ -16,7 +16,7 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --lora_enable True \
   --action_dim 14 \
   --state_dim 14 \
-  --flash_attn True \
+  --flash_attn False \
   --chunk_size 16 \
   --load_pretrain_dit False \
   --policy_head_type $ACTION_HEAD \

@@ -4,8 +4,8 @@ LLM_MODEL_SIZE=2B
 
 ACTION_HEAD=scale_dp_policy  # unet_diffusion_policy or scale_dp_policy
 
-MNOP=/media/rl/HDD/data/multi_head_train_results/aloha_qwen2_vla/qwen2_vl_2B/qwen2_vl_4_cameras_1_17_all_data_pretrain_4w_DiT_H_1_17_full_param_stage_1_50_raw_lang/checkpoint-60000
-MNOP=/media/rl/HDD/data/weights/Qwen2-VL-2B-Instruct
+
+MNOP=checkpoints/qwen2_vl
 TASKNAME=example_tasks
 
 OUTPUT=/home/rl/Downloads/output/test

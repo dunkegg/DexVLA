@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAn
 import warnings
 import os
 from aloha_scripts.utils import *
-from policy_heads.distilbert import DistilBERTPolicyEncoder
+from policy_heads.distilbert import *
 def find_all_linear_names(model, rank0_print, lora_module=None):
     cls = torch.nn.Linear
     lora_module_names = set()
