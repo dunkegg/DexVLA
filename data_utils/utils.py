@@ -9,6 +9,7 @@ from time import time
 from torch.utils.data import TensorDataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision.transforms.functional import to_pil_image, to_tensor
+import multiprocessing as mp
 import IPython
 import copy
 e = IPython.embed
@@ -40,7 +41,19 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.transformations = None
         self.rank0_print(f"########################Current Image Size is [{self.data_args.image_size_stable}]###################################")
         self.rank0_print(f"{RED}policy class: {self.policy_class}; augument: {self.augment_images}{RESET}")
-        a=self.__getitem__(0) # initialize self.is_sim and self.transformations
+        # a=self.__getitem__(0) # initialize self.is_sim and self.transformations
+        # self.rank0_print('Initializing transformations')
+        # original_size = eval(self.data_args.image_size_stable)  # e.g., (320, 240)
+        # ratio = 0.95
+        # self.transformations = [
+        #     transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
+        #     transforms.Resize(original_size, antialias=True),
+        #     transforms.RandomRotation(degrees=[-5.0, 5.0], expand=False),
+        #     transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5)
+        # ]
+
+
+
         if len(self.camera_names) > 2:
             # self.rank0_print("%"*40)
             self.rank0_print(f"The robot is {RED} {self.robot} {RESET} | The camera views: {RED} {self.camera_names} {RESET} | The history length: {RED} {self.data_args.history_images_length} {RESET}")
@@ -56,7 +69,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         episode_id = self.episode_ids[episode_index]
         return episode_id, start_ts
 
-    def load_from_h5(self, dataset_path, start_ts):
+    def _load_from_h5(self, dataset_path, start_ts):
         with h5py.File(dataset_path, 'r') as root:
             try: # some legacy data does not have this attribute
                 is_sim = root.attrs['sim']
@@ -106,19 +119,74 @@ class EpisodicDataset(torch.utils.data.Dataset):
                 action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
                 action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
         return original_action_shape, action, action_len, image_dict, qpos, qvel, raw_lang, reasoning
+
+
+
+    def _load_worker_wrapper(queue, dataset_path, start_ts, self_ref):
+        try:
+            result = self_ref._load_from_h5(dataset_path, start_ts)
+            queue.put((True, result))
+        except Exception as e:
+            queue.put((False, e))
+
+    def safe_load_with_retries(self, dataset_path, start_ts, max_retries=3, timeout=10):
+        ctx = mp.get_context('spawn')  # 避免 fork 导致 HDF5 共享问题
+        for attempt in range(max_retries):
+            queue = ctx.Queue()
+            p = ctx.Process(target=self._load_worker_wrapper, args=(queue, dataset_path, start_ts, self))
+            p.start()
+            p.join(timeout)
+            if p.is_alive():
+                p.terminate()
+                self.rank0_print(f"[Retry {attempt+1}] Timeout when reading {dataset_path}")
+                continue
+            if not queue.empty():
+                success, payload = queue.get()
+                if success:
+                    return payload
+                else:
+                    self.rank0_print(f"[Retry {attempt+1}] Exception while reading {dataset_path}: {repr(payload)}")
+
+            else:
+                self.rank0_print(f"[Retry {attempt+1}] No result returned from {dataset_path}")
+        raise RuntimeError(f"Failed to load {dataset_path} after {max_retries} retries.")
+
     def __getitem__(self, index):
         episode_id, start_ts = self._locate_transition(index)
-        dataset_path = self.dataset_path_list[episode_id]
-        try:
-            original_action_shape, action, action_len, image_dict, qpos, qvel, raw_lang, reasoning = self.load_from_h5(dataset_path, start_ts)
-        except Exception as e:
-            print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
-            try:
-                dataset_path = self.dataset_path_list[episode_id + 1]
-            except Exception as e:
-                dataset_path = self.dataset_path_list[episode_id - 1]
+        fallback_offsets = [0, 1, -1]
 
-            original_action_shape, action, action_len, image_dict, qpos, qvel, raw_lang, reasoning = self.load_from_h5(dataset_path, start_ts)
+        for offset in fallback_offsets:
+            new_id = episode_id + offset
+            if not (0 <= new_id < len(self.dataset_path_list)):
+                continue
+            dataset_path = self.dataset_path_list[new_id]
+
+            try:
+                (
+                    original_action_shape,
+                    action,
+                    action_len,
+                    image_dict,
+                    qpos,
+                    qvel,
+                    raw_lang,
+                    reasoning
+                ) = self._load_from_h5(dataset_path, start_ts)
+
+                if raw_lang is None or action is None or image_dict is None:
+                    raise ValueError(f"Incomplete sample from {dataset_path}")
+                break
+            except Exception as e:
+                # self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Fallback {offset} failed: {dataset_path} | {e}")
+                self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Tried files: {[self.dataset_path_list[episode_id + o] for o in fallback_offsets if 0 <= episode_id + o < len(self.dataset_path_list)]}")
+
+        else:
+            raise RuntimeError(
+                f"[Rank {getattr(self, 'rank', 'N/A')}] All fallback loading failed for index {index} "
+                f"(episode_id={episode_id}, tried offsets={fallback_offsets})"
+            )
+
+
 
         # self.is_sim = is_sim
         padded_action = np.zeros((self.max_episode_len, original_action_shape[1]), dtype=np.float32)
@@ -146,8 +214,9 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         image_data = torch.einsum('k h w c -> k c h w', image_data)
 
-        # augmentation
-        if self.transformations is None:
+        # # augmentation
+
+        if not hasattr(self, "transformations") or self.transformations is None:
             self.rank0_print('Initializing transformations')
             original_size = image_data.shape[-2:]
             ratio = 0.95
@@ -155,8 +224,9 @@ class EpisodicDataset(torch.utils.data.Dataset):
                 transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
                 transforms.Resize(original_size, antialias=True),
                 transforms.RandomRotation(degrees=[-5.0, 5.0], expand=False),
-                transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5) #, hue=0.08)
+                transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5)
             ]
+
 
         if self.augment_images:
             for transform in self.transformations:
@@ -285,6 +355,22 @@ def BatchSampler(batch_size, episode_len_l, sample_weights):
             batch.append(step_idx)
         yield batch
 
+def filter_valid_hdf5(dataset_path_list, rank0_print=print):
+    valid_paths = []
+    for path in dataset_path_list:
+        try:
+            with h5py.File(path, 'r') as f:
+                # 简单读取关键字段进行验证
+                if '/action' not in f:
+                    raise ValueError("Missing /action key")
+                _ = f['/action'][()]  # 检查能否读取
+        except Exception as e:
+            rank0_print(f"[WARN] Skipping broken hdf5 file: {path} | {type(e).__name__}: {e}")
+            continue
+        valid_paths.append(path)
+    return valid_paths
+
+
 def load_data(dataset_dir_l, name_filter, camera_names, batch_size_train, batch_size_val, chunk_size, config, rank0_print=print, skip_mirrored_data=False, policy_class=None, stats_dir_l=None, sample_weights=None, train_ratio=0.99, llava_pythia_process=None):
     if type(dataset_dir_l) == str:
         dataset_dir_l = [dataset_dir_l]
@@ -298,6 +384,11 @@ def load_data(dataset_dir_l, name_filter, camera_names, batch_size_train, batch_
     num_episodes_0 = len(dataset_path_list_list[0])
     dataset_path_list = flatten_list(dataset_path_list_list)
     dataset_path_list = [n for n in dataset_path_list if name_filter(n)]
+    dataset_path_list = filter_valid_hdf5(dataset_path_list, rank0_print)
+    rank0_print(f"{RED}Valid HDF5 files: {len(dataset_path_list)} (filtered from total {sum(len(x) for x in dataset_path_list_list)}){RESET}")
+
+
+
     num_episodes_l = [len(dataset_path_list) for dataset_path_list in dataset_path_list_list]
     num_episodes_cumsum = np.cumsum(num_episodes_l)
 
