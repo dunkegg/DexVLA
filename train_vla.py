@@ -27,6 +27,10 @@ from qwen2_vla import model_load_utils as ml_utils
 import torch
 local_rank = None
 from aloha_scripts.utils import *
+
+import torch.multiprocessing as mp
+mp.set_sharing_strategy("file_system")
+mp.set_start_method('spawn', force=True)
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 @dataclass
 class ActionHeadArguments:
@@ -50,7 +54,7 @@ class ModelArguments:
 
     load_pretrain_dit: bool = field(default=False) # whether to load weights of pretrained diffusion head
     pretrain_dit_path: Optional[str] = field(default=None) # path to pretrained diffusion head, used when load_pretrain_dit is True
-
+    enable_distilbert: Optional[bool] = field(default=False)
     is_tinyvla: bool = field(default=False)
 
 @dataclass

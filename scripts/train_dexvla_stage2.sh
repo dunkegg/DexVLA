@@ -11,13 +11,13 @@ TASKNAME=example_tasks
 
 OUTPUT=OUTPUT/qwen2_dexvla_stage_1
 
-deepspeed --master_port 29604 --num_gpus=1 --num_nodes=1 ./train_vla.py \
+deepspeed --master_port 29604 --num_gpus=2 --num_nodes=1 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning True \
   --lora_enable False \
   --action_dim 14 \
   --state_dim 14 \
-  --flash_attn False \
+  --flash_attn True \
   --chunk_size 50 \
   --load_pretrain_dit True \
   --pretrain_dit_path $DIT_PRETRAIN \
@@ -37,7 +37,7 @@ deepspeed --master_port 29604 --num_gpus=1 --num_nodes=1 ./train_vla.py \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 100000 \
+  --max_steps 10000 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
@@ -51,7 +51,8 @@ deepspeed --master_port 29604 --num_gpus=1 --num_nodes=1 ./train_vla.py \
   --tf32 True \
   --model_max_length 2048 \
   --gradient_checkpointing True \
-  --dataloader_num_workers 2 \
+  --dataloader_num_workers 1 \
+  --dataloader_persistent_workers False \
   --lazy_preprocess True \
   --policy_class $ACTION_HEAD \
   --concat "token_cat" \
