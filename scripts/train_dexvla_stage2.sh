@@ -25,6 +25,7 @@ deepspeed --master_port 29604 --num_gpus=2 --num_nodes=1 ./train_vla.py \
   --policy_head_size "ScaleDP_H" \
   --image_size_stable "(320,240)" \
   --image_size_wrist "(320,240)" \
+  --history_images_length 4 \
   --task_name ${TASKNAME} \
   --model_name_or_path $MNOP \
   --version v0 \
