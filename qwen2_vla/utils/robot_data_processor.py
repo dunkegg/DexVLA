@@ -61,7 +61,8 @@ class Qwen2VLAProcess:
         return torch.from_numpy(np.array(each))
 
     def forward_process(self, sample, use_reasoning=True):
-        video = False
+        # video = False
+        video = True
         messages = self.datastruct_droid2llava(sample, video=video)
 
         data_dict = dict(
@@ -69,16 +70,17 @@ class Qwen2VLAProcess:
             images=None
         )
 
-        image_data = torch.chunk(sample['image'], sample['image'].shape[0], 0)
+        # image_data = torch.chunk(sample['image'], sample['image'].shape[0], 0)
 
-        images_list = []
+        # images_list = []
 
-        for i, each in enumerate(image_data):
-            img_pil = self.qwen2_image_preprocess(each, self.camera_names[i])
-            images_list.append(img_pil)
+        # for i, each in enumerate(image_data):
+        #     img_pil = self.qwen2_image_preprocess(each, self.camera_names[i])
+        #     images_list.append(img_pil)
 
-        image_data = images_list
-        video_inputs = None
+        # image_data = images_list
+
+        video_inputs = sample['video']
 
         text = self.multimodal_processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
@@ -86,7 +88,7 @@ class Qwen2VLAProcess:
 
         model_inputs = self.multimodal_processor(
             text=text,
-            images=image_data,
+            images=None,
             videos=video_inputs,
             padding=True,
             return_tensors="pt",
@@ -111,8 +113,6 @@ class Qwen2VLAProcess:
         return data_dict
 
     def datastruct_droid2llava(self, sample, video=False):
-        len_image = sample['image'].shape[0]
-
         messages = [
             {
                 "role": "user",
@@ -120,18 +120,18 @@ class Qwen2VLAProcess:
             },
         ]
 
-        for i in range(len_image):
-            if video:
+        if video:
+            messages[0]['content'].append({
+                "type": "video",
+                "video": None,
+            })
+        else:
+            len_image = sample['image'].shape[0]  # 多帧图像
+            for i in range(len_image):
                 messages[0]['content'].append({
-                    "type": "video",
-                    "video": None,
+                    "type": "image",
+                    "image": None,
                 })
-            else:
-                messages[0]['content'].append({
-                            "type": "image",
-                            "image": None,
-                        })
-        messages[0]['content'].append({"type": "text", "text": f""})
-        messages[0]['content'][-1]['text'] = sample['raw_lang']
 
+        messages[0]['content'].append({"type": "text", "text": sample['raw_lang']})
         return messages
