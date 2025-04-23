@@ -120,6 +120,83 @@ class EpisodicDataset(torch.utils.data.Dataset):
                 action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
         return original_action_shape, action, action_len, image_dict, qpos, qvel, raw_lang, reasoning
 
+    def _load_from_h5_nav(self, dataset_path, start_ts):
+        with h5py.File(dataset_path, 'r') as root:
+            try: # some legacy data does not have this attribute
+                is_sim = root.attrs['sim']
+            except:
+                is_sim = False
+            compressed = root.attrs.get('compress', False)
+            if 'truncate' in dataset_path:
+                compressed = False
+            try:
+                raw_lang = root['language_raw'][0].decode('utf-8')
+            except Exception as e:
+                # self.rank0_print(e)
+                self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
+                exit(0)
+            reasoning = " "
+            if self.data_args.use_reasoning:
+                if 'substep_reasonings' in root.keys():
+                    reasoning = root['substep_reasonings'][start_ts].decode('utf-8')
+                else:
+                    try:
+                        reasoning = root['reasoning'][0].decode('utf-8')
+                    except Exception as e:
+                        self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
+                        exit(0)
+            action = root['/action'][()]
+            original_action_shape = action.shape
+            episode_len = original_action_shape[0]
+
+            # get observation at start_ts only
+            qpos = root['/observations/qpos'][start_ts]
+            qvel = root['/observations/qvel'][start_ts]
+
+            image_dict = dict()
+            video_dict = dict()
+            n_frames = self.data_args.history_images_length
+
+            cam_name = self.camera_names[0]
+
+            image_seq = root[f'/observations/images/{cam_name}']
+            total_frames = image_seq.shape[0]
+
+            start_idx = max(0, start_ts - n_frames + 1)
+            pad_len = max(0, n_frames - (start_ts - start_idx + 1))
+
+            frames = []
+
+            # 前向补齐逻辑
+            for _ in range(pad_len):
+                img = image_seq[start_idx]
+                if compressed:
+                    img = cv2.imdecode(img, 1)
+                img = cv2.resize(img, eval(self.data_args.image_size_stable))
+                frames.append(img)
+
+            # 正常帧读取
+            for t in range(start_idx, start_ts + 1):
+                img = image_seq[t]
+                if compressed:
+                    img = cv2.imdecode(img, 1)
+                img = cv2.resize(img, eval(self.data_args.image_size_stable))
+                frames.append(img)
+
+            # 存储单帧图像（最后一帧）
+            image_dict[cam_name] = frames[-1]
+
+
+
+            if is_sim:
+                action = action[start_ts:]
+                action_len = episode_len - start_ts
+            else:
+                action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
+                action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
+        return original_action_shape, action, action_len, image_dict, frames, qpos, qvel, raw_lang, reasoning
+
+
 
 
     def _load_worker_wrapper(queue, dataset_path, start_ts, self_ref):
@@ -162,17 +239,27 @@ class EpisodicDataset(torch.utils.data.Dataset):
             dataset_path = self.dataset_path_list[new_id]
 
             try:
+                # (
+                #     original_action_shape,
+                #     action,
+                #     action_len,
+                #     image_dict,
+                #     qpos,
+                #     qvel,
+                #     raw_lang,
+                #     reasoning
+                # ) = self._load_from_h5(dataset_path, start_ts)
                 (
                     original_action_shape,
                     action,
                     action_len,
                     image_dict,
+                    video,
                     qpos,
                     qvel,
                     raw_lang,
                     reasoning
-                ) = self._load_from_h5(dataset_path, start_ts)
-
+                ) = self._load_from_h5_nav(dataset_path, start_ts)
                 if raw_lang is None or action is None or image_dict is None:
                     raise ValueError(f"Incomplete sample from {dataset_path}")
                 break
@@ -203,22 +290,45 @@ class EpisodicDataset(torch.utils.data.Dataset):
         # new axis for different cameras
         all_cam_images = []
         for cam_name in self.camera_names:
-            all_cam_images.append(image_dict[cam_name])
+            if cam_name in image_dict:
+                all_cam_images.append(image_dict[cam_name])
         all_cam_images = np.stack(all_cam_images, axis=0)
-
+        video = np.stack(video, axis=0)
         # construct observations
         image_data = torch.from_numpy(all_cam_images)
+        video_data = torch.from_numpy(video)
+
         qpos_data = torch.from_numpy(qpos).float()
         action_data = torch.from_numpy(padded_action).float()
         is_pad = torch.from_numpy(is_pad).bool()
 
-        image_data = torch.einsum('k h w c -> k c h w', image_data)
+        # image_data = torch.einsum('k h w c -> k c h w', image_data)
+        # video_data = torch.einsum('k h w c -> k c h w', video_data)
+        image_data = image_data.permute(0, 3, 1, 2)  # [T, H, W, C] → [T, C, H, W]
+        video_data = video_data.permute(0, 3, 1, 2)  # [T, H, W, C] → [T, C, H, W]
+
 
         # # augmentation
 
+        # if not hasattr(self, "transformations") or self.transformations is None:
+        #     self.rank0_print('Initializing transformations')
+        #     original_size = image_data.shape[-2:]
+        #     ratio = 0.95
+        #     self.transformations = [
+        #         transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
+        #         transforms.Resize(original_size, antialias=True),
+        #         transforms.RandomRotation(degrees=[-5.0, 5.0], expand=False),
+        #         transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5)
+        #     ]
+
+
+        # if self.augment_images:
+        #     for transform in self.transformations:
+        #         image_data = transform(image_data)
+
         if not hasattr(self, "transformations") or self.transformations is None:
             self.rank0_print('Initializing transformations')
-            original_size = image_data.shape[-2:]
+            original_size = video_data.shape[-2:]
             ratio = 0.95
             self.transformations = [
                 transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
@@ -230,7 +340,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         if self.augment_images:
             for transform in self.transformations:
-                image_data = transform(image_data)
+                video_data = transform(video_data)
+
 
         norm_stats = self.norm_stats
 
@@ -240,6 +351,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         sample = {
             'image': image_data,
+            'video': video_data,
             'state': qpos_data,
             'action': action_data,
             'is_pad': is_pad,
@@ -250,6 +362,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         if index == 0:
             self.rank0_print(reasoning)
         del image_data
+        del video_data
         del qpos_data
         del action_data
         del is_pad
