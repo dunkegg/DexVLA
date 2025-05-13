@@ -151,8 +151,10 @@ robomimic-r2d2/
 robomimic-r2d2.zip
 OUTPUT/
 data/
+data_nav/
 checkpoints/
 loglog/
+unpacked_images/
 
 # Pyre type checker
 .pyre/
