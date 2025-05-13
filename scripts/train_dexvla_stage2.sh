@@ -9,7 +9,7 @@ MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 
 TASKNAME=example_tasks
 
-OUTPUT=OUTPUT/qwen2_dexvla_stage_1
+OUTPUT=OUTPUT/qwen2_dexvla_no_pre
 
 deepspeed --master_port 29604 --num_gpus=2 --num_nodes=1 ./train_vla.py \
   --deepspeed scripts/zero2.json \
@@ -19,7 +19,7 @@ deepspeed --master_port 29604 --num_gpus=2 --num_nodes=1 ./train_vla.py \
   --state_dim 14 \
   --flash_attn True \
   --chunk_size 50 \
-  --load_pretrain_dit True \
+  --load_pretrain_dit False \
   --pretrain_dit_path $DIT_PRETRAIN \
   --policy_head_type $ACTION_HEAD \
   --policy_head_size "ScaleDP_H" \

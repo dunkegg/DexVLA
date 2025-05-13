@@ -4,13 +4,13 @@ LLM_MODEL_SIZE=2B
 
 ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
-DIT_PRETRAIN=/path/to/pretrained/ScaleDP
-MNOP=/path/to/trained/DexVLA # DexVLA weights after stage 2
+MNOP=OUTPUT/qwen2_dexvla_no_pre # DexVLA weights after stage 2
 TASKNAME=example_tasks
 
-OUTPUT=/path/to/save/dir
+OUTPUT=OUTPUT/qwen2_dexvla_no_pre_stage3
 
-deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
+# deepspeed --master_port 29604 --num_gpus=2 --num_nodes=1 ./train_vla.py \
+deepspeed --include localhost:0,5 --master_port 29604 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning True \
   --lora_enable False \
@@ -25,6 +25,7 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --policy_head_size "ScaleDP_H" \
   --image_size_stable "(320,240)" \
   --image_size_wrist "(320,240)" \
+  --history_images_length 4 \
   --episode_first False \
   --task_name $TASKNAME \
   --model_name_or_path $MNOP \
@@ -39,8 +40,8 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --group_by_modality_length False \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 80000 \
-  --per_device_train_batch_size 12 \
+  --max_steps 8000 \
+  --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
   --save_steps 10000 \
@@ -53,7 +54,7 @@ deepspeed --master_port 29604 --num_gpus=8 --num_nodes=1 ./train_vla.py \
   --tf32 True \
   --model_max_length 2048 \
   --gradient_checkpointing True \
-  --dataloader_num_workers 8 \
+  --dataloader_num_workers 1 \
   --lazy_preprocess True \
   --policy_class $ACTION_HEAD \
   --concat "token_cat" \

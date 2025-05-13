@@ -1449,7 +1449,7 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
 
         self.padding_side = "left"  # set it to left by default, user can use setter to change padding_sides
         self.using_film = config.using_film
-
+        self.logging_steps = config.logging_steps
         self.llm_loss_weight = config.llm_loss_weight
 
         if isinstance(config.policy_head_config, dict):
@@ -1468,6 +1468,8 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
             # Initialize projection layers and condition modulation layers
             self.reasoning_action_proj = ActionProjector(config.hidden_size, config.hidden_size)
             self.reasoning_film = FiLM(feature_dim=config.hidden_size, condition_dim=config.hidden_size)
+
+        self.training_steps = 0
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -1656,6 +1658,37 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
 
     @add_start_docstrings_to_model_forward(QWEN2_VL_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=Qwen2VLCausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
+    # def visiualize(self,true_action,ret,reasoning):
+    #     # 假设你用的是 wandb，也可以写入 TensorBoard
+    #     pred_action = ret['pred'] if 'pred' in ret else ret['action']  # pred 是推理结果（如 inference 模式），action 是训练对比 target
+
+    #     # 可视化轨迹 (例如前两维是 x, y)
+    #     import matplotlib.pyplot as plt
+    #     import io
+    #     from PIL import Image
+
+    #     fig, ax = plt.subplots()
+    #     ax.plot(true_action[0, :, 0].cpu(), true_action[0, :, 1].cpu(), label='GT', linestyle='--')
+    #     ax.plot(pred_action[0, :, 0].detach().cpu(), pred_action[0, :, 1].detach().cpu(), label='Pred')
+    #     ax.legend()
+    #     ax.set_title("Predicted vs Ground Truth Trajectory")
+
+    #     buf = io.BytesIO()
+    #     plt.savefig(buf, format='png')
+    #     buf.seek(0)
+    #     image = Image.open(buf)
+
+    #     # 使用 WandB 可视化
+    #     import wandb
+    #     wandb.log({"trajectory_visual": wandb.Image(image)}, step=self.training_steps)
+
+    #     # outputs_text = tokenizer.batch_decode(
+    #     #     output_ids[:, input_token_len:],  # 只取新生成的 token
+    #     #     skip_special_tokens=False
+    #     # )[0]
+
+    #     # wandb.log({"llm_output": outputs_text}, step=global_step)
+
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -1995,7 +2028,7 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
                  pixel_values=None,
                  attention_mask=None,
                  image_grid_thw=None,
-                 input_texts=None,
+                #  input_texts=None,
                  ):
         input_ids = input_ids.to('cuda')
 
