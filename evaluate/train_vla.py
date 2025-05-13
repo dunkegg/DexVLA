@@ -31,6 +31,13 @@ from aloha_scripts.utils import *
 import torch.multiprocessing as mp
 mp.set_sharing_strategy("file_system")
 mp.set_start_method('spawn', force=True)
+
+
+#  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
+print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
+print("torch.cuda.device_count():", torch.cuda.device_count())
+print("torch.cuda.current_device():", torch.cuda.current_device())
+print("torch.cuda.get_device_name(0):", torch.cuda.get_device_name(0))
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 @dataclass
 class ActionHeadArguments:
@@ -72,6 +79,7 @@ class DataArguments:
     image_size_stable: str = "480"  # image size of non-wrist camera
     image_size_wrist: str = "56" # image size of wrist camera
     history_images_length: int = 1 # length of history images
+    visiualize_steps: int = field(default=10)
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -222,7 +230,7 @@ def parse_param():
     for k in ['concat', 'using_film']:
         setattr(config, k, asdict(model_args)[k])
     config.llm_loss_weight = training_args.llm_loss_weight
-
+    config.logging_steps = training_args.logging_steps
     if model_args.is_tinyvla:
         rank0_print(f"{RED} This is TinyVLA, Please Check Using_film equals False:Using_film {model_args.using_film} {RESET}")
         time.sleep(1)
