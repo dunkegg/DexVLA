@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES="0,2,3,4"
+export CUDA_VISIBLE_DEVICES="1,2,3,4"
 
 # 设置主节点地址和端口
 export MASTER_ADDR="localhost"  # 你也可以设置为主节点的 IP 地址
