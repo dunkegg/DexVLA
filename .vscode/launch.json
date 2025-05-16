@@ -2,6 +2,21 @@
     "version": "0.2.0",
     "configurations": [
       {
+        "name": "label",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/process_images.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+        ],
+        "python": "/root/miniconda3/envs/dexvla2/bin/python"
+      },
+
+      {
         "name": "Debug DexVLA Train",
         "type": "python",
         "request": "launch",
