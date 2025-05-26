@@ -19,7 +19,7 @@ def generate_annotation_for_image(image_data):
     # 这里我们简单示范：根据图片的索引生成标注，你可以自定义规则
     return f"Annotation for image with shape {image_data.shape}"
 
-def qwen_lable(h5_file_path, labeller):
+def qwen_lable(h5_file_path, labeller, debug):
     """
     读取 HDF5 文件，并根据图片生成标注信息，最后将标注信息保存到文件中。
     
@@ -32,17 +32,20 @@ def qwen_lable(h5_file_path, labeller):
     print(f"label {h5_file_path} ")
     with h5py.File(h5_file_path, "a") as f:
         # 新的标注数据集的名称
-        annotations_dataset_name = 'annotations_long2'
-        if annotations_dataset_name in f:
-            annotations = f[annotations_dataset_name][()]
-            if annotations[0].decode('utf-8')  != '':
-                logging.info("skip")
-                return False
+        annotations_dataset_name = 'annotations_action'
+        if not debug:
+            if annotations_dataset_name in f:
+                annotations = f[annotations_dataset_name][()]
+                if annotations[0].decode('utf-8')  != '':
+                    logging.info("skip")
+                    print("skip")
+                    return False
         # logging.info(f"label {h5_file_path} ")
         
         # 读取现有的图片数据集
         images = f['obs'][:]
-
+        sub_tasks = f['annotations_long2'][()]
+        sub_tasks = [sub.decode('utf-8') for sub in sub_tasks]
         # if len(images)<=43:
         #     return False
         
@@ -54,13 +57,7 @@ def qwen_lable(h5_file_path, labeller):
         times = 0
         while times<5:
             try:
-                if len(images)>20:
-                    type = "long"
-                    new_annotations = labeller.label_images_long(images, instruction, type)
-                else:
-                    type = "short"
-                    new_annotations = labeller.label_images_short(images, instruction, type)
-
+                new_annotations = labeller.label_images_action(images, sub_tasks)
                 # type = "long"
                 # new_annotations = labeller.label_images_long(images, instruction, type)
                 break
@@ -71,15 +68,12 @@ def qwen_lable(h5_file_path, labeller):
         # 检查是否已经存在标注数据集，如果存在则删除它
         if annotations_dataset_name in f:
             del f[annotations_dataset_name]
-        if "type" in f:
-            del f["type"]
+
         
         # 将新的标注信息添加到 HDF5 文件
 
         cleaned = [s if s is not None else "null" for s in new_annotations]
         f.create_dataset(annotations_dataset_name, data=np.array(cleaned, dtype=h5py.string_dtype(encoding='utf-8')))
-        dt = h5py.string_dtype(encoding='utf-8')
-        f.create_dataset("type", data=type, dtype=dt)
         logging.info(f"New annotations added to {h5_file_path}")
 
 
@@ -88,7 +82,7 @@ def qwen_lable(h5_file_path, labeller):
         gc.collect()  # 强制进行垃圾回收
         return True
 
-def process_directory(directory, labeller):
+def process_directory(directory, labeller, debug):
     
     """
     遍历目录中的所有 HDF5 文件，并为每个文件添加标注信息。
@@ -104,7 +98,7 @@ def process_directory(directory, labeller):
         if filename.endswith(".h5"):  # 只处理 .h5 文件
             h5_file_path = os.path.join(directory, filename)
             logging.info(f"Processing {h5_file_path}")
-            qwen_lable(h5_file_path, labeller)
+            qwen_lable(h5_file_path, labeller, debug)
             # try:
             #     # 尝试处理文件
             #     qwen_lable(h5_file_path, labeller)
@@ -116,12 +110,13 @@ def process_directory(directory, labeller):
 def main():
     # 示例目录路径
     # directory = "/wangzejin/code/DexVLA/data/hd5f"  # 替换为你的文件目录路径
-    directory = "/wangzejin/code/DexVLA/data/hd5f"  # 替换为你的文件目录路径
+    directory = "/wangzejin/code/DexVLA/data/sample"  # 替换为你的文件目录路径
     logging.basicConfig(filename='debug.log', level=logging.INFO, filemode='w')
     logging.info("Process started")
     labeller = QwenLabeler()
     # 遍历目录并处理每个 HDF5 文件
-    process_directory(directory, labeller)
+    debug = True
+    process_directory(directory, labeller, debug)
 
 if __name__ == "__main__":
     main()
