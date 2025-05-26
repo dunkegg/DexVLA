@@ -1,7 +1,7 @@
 # prompt_generator.py
 
 import json
-
+import re
 def generate_prompt(instruction, window_size, k, horizon, historical_commands):
 
     prompt = f"""
@@ -55,12 +55,113 @@ def describe_prompt():
     return prompt
 
 
+
+def action_prompt(instruction, horizon):
+    max_actions = max(1, horizon // 5)
+    prompt = f"""
+    The images represent a robot executing a VLN task: {instruction}.
+
+    You need to tell me for each images, what action should robot do in control level. For example: go forward, turn left, turn right, stop etc .
+
+    Your VLN task is a **global** description of your actions. Use it as a reference only, and give the **local** actions. 
+    
+    Use actions like:
+    - go forward
+    - turn left
+    - turn right
+    - turn around
+    - stop
+
+    And modify them using only the following **adverbs to indicate degree**:
+    - slightly
+    - moderately
+    - sharply
+    - slowly
+    - quickly
+
+    **Important constraints**:
+    1. **Do NOT invent new verbs or adverbs.** Stick to the exact words above. For example, don't use "move ahead", "advance", "briskly", "gently", or similar synonyms.
+
+    Output the action and index of images in the following format:
+    {{
+        "reason": "your reasoning",
+        "index of images": "action 1",
+        "index of images": "action 2",
+        ...
+    }}
+    Remember there is {horizon} images in total. If you are not sure, you can jump some images.
+
+    For example:  "0-7": "*******" , "8": ********
+
+    **Instructions:**
+    1. Ensure the actions are **temporally coherent!!!** — the action assigned to each image should consider its neighboring frames (both before and after).
+    3. Each action segment must cover **no more than 10 consecutive images**. If an action spans more than 10 images, break it into chunks like `"0-9"`, `"10-18"` with the same label.
+    4. You must label **every image**.
+    5. Output the result as a JSON dictionary in this format:
+
+    """
+    return prompt
+
+# def action_prompt(instruction, horizon):
+#     max_actions = max(1, horizon // 5)
+#     prompt = f"""
+#     The images represent a robot executing a VLN task: {instruction}.
+
+#     You need to tell me for each images, what action should robot do in control level. For example: go forward, turn left, turn right, stop etc.
+#     Output the action and index of images in the following format:
+#     {{
+#         "index of images": "action 1",
+#         "index of images": "action 2",
+#         ...
+#     }}
+#     Remember there is {horizon} images in total. If you are not sure, you can jump some images.
+
+#     For example:  "0-7": "*******" , "8": ********
+
+#     **Instructions:**
+#     1. Ensure the actions are **temporally coherent** — the action assigned to each image should consider its neighboring frames (both before and after).
+#     2. You can split the trajectory into meaningful action segments, but you should use **at most {max_actions} distinct action types** across the whole sequence.
+#     3. Each action segment must cover **no more than 10 consecutive images**. If an action spans more than 10 images, break it into chunks like `"0-9"`, `"10-18"` with the same label.
+#     4. You must label **every image**.
+#     5. Output the result as a JSON dictionary in this format:
+
+#     """
+#     return prompt
+
+
+# def action_prompt(instruction, horizon):
+#     max_actions = max(1, horizon // 5)
+#     prompt = f"""
+#     The images represent a robot's actions.
+
+#     You need to tell me for each images, what action should robot do in control level. For example: go forward, turn left, turn right, stop etc.
+#     Output the action and index of images in the following format:
+#     {{
+#         "index of images": "action 1",
+#         "index of images": "action 2",
+#         ...
+#     }}
+#     Remember there is {horizon} images in total. If you are not sure, you can jump some images.
+
+#     For example:  "0-7": "*******" , "8": ********
+
+#     **Instructions:**
+#     1. Ensure the actions are **temporally coherent** — the action assigned to each image should consider its neighboring frames (both before and after).
+#     2. You can split the trajectory into meaningful action segments, but you should use **at most {max_actions} distinct action types** across the whole sequence.
+#     3. Each action segment must cover **no more than 10 consecutive images**. If an action spans more than 10 images, break it into chunks like `"0-9"`, `"10-18"` with the same label.
+#     4. You must label **every image**.
+#     5. Output the result as a JSON dictionary in this format:
+
+#     """
+#     return prompt
+
+
 def split_prompt(instruction, horizon):
 
     prompt = f"""
     The images represent a robot executing a VLN task: {instruction}.
 
-    You need to tell me for each sub-task start with a verd, which images belongs to this sub-task.
+    You need to tell me for each sub-task start with a verb, which images belongs to this sub-task.
     Output the sub-task and index of images in the following format:
     {{
         "index of images": "description of sub-task 1",
@@ -81,6 +182,7 @@ def split_prompt(instruction, horizon):
         "indices of images": "description of sub-task 2",
         ...
     }}
+    For example:  "0-8": "***********"
 
     Make sure that no single image group (value of the key) contains more than 10 consecutive images.
     If you believe a sub-task spans more than 10 images, you can split it into smaller chunks (e.g., [0-9], [10-19]) and assign all of them to the same sub-task description.
@@ -88,6 +190,63 @@ def split_prompt(instruction, horizon):
     Every sub-task should be included!
     """
     return prompt
+
+
+    # Make sure that no single image group (value of the key) contains more than 10 consecutive images.
+    # If you believe a sub-task spans more than 10 images, you can split it into smaller chunks (e.g., [0-9], [10-19]) and assign all of them to the same sub-task description.
+
+
+def split_instruction_prompt(instruction, horizon):
+    prompt = f"""
+You are a robot executing the following Vision-and-Language Navigation (VLN) instruction:
+
+"{instruction}"
+
+You are given {horizon} consecutive images that visualize your execution of this instruction.
+
+Your tasks:
+1. **Split the instruction into two consecutive sub-tasks**, each starting with a verb and **directly copied** from the instruction. These two sub-tasks must be **non-overlapping**, and together they should **reconstruct the original instruction exactly**.
+2. **Assign each sub-task to a portion of the image sequence**. The assignment does **not need to be an exact split**, but should reasonably reflect the visual transition between the two sub-tasks.
+
+Important:
+- Do **not create new phrasing**. The sub-task descriptions must be **copied verbatim** from the instruction.
+- Try to make the division of image indices reflect the semantic change between the sub-tasks, not just the midpoint.
+- If necessary, you can adjust the index ranges (e.g., "0-8" and "9-23"), but make sure they cover all images.
+- Each sub-task should have at least one verb.
+Output format:
+{{
+    "image index range": "first sub-task (copied from instruction)",
+    "image index range": "second sub-task (copied from instruction)"
+}}
+"""
+    return prompt
+
+def extract_ranges_and_descriptions(json_data):
+    """
+    从模型生成的 JSON 中提取每段图像索引范围和对应的描述。
+
+    Args:
+        json_data (dict or str): 类似 {"0-10": "Walk to door", "11-23": "Enter the room"}
+
+    Returns:
+        List[Tuple[Tuple[int, int], str]]: 每个元素是 ((start_idx, end_idx), description)
+    """
+    if isinstance(json_data, str):
+        json_data = json.loads(json_data)
+
+    results = []
+    for indices_range, description in json_data.items():
+        # 清理前后括号
+        indices_range = re.sub(r'^[\[\{](.*?)[\]\}]$', r'\1', indices_range)
+
+        if '-' in indices_range:
+            start_idx, end_idx = map(int, indices_range.split('-'))
+        else:
+            start_idx = end_idx = int(indices_range)
+
+        results.append(((start_idx, end_idx), description))
+
+    return results
 
 def fill_descriptions(horizon, json_data):
     """
@@ -107,7 +266,10 @@ def fill_descriptions(horizon, json_data):
 
     # 遍历 JSON 数据，填充描述
     for indices_range, description in json_data.items():
+        indices_range = re.sub(r'^[\[\{](.*?)[\]\}]$', r'\1', indices_range)
         # 解析索引范围
+        if 'reason' in indices_range:
+            continue
         if '-' in indices_range:  # 处理 "start-end" 形式的范围
             start_idx, end_idx = map(int, indices_range.split('-'))
             for i in range(start_idx, end_idx + 1):

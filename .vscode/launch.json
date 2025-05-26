@@ -5,7 +5,21 @@
         "name": "label",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/process_images.py",
+        "program": "${workspaceFolder}/process_images_action.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+        ],
+        "python": "/root/miniconda3/envs/dexvla2/bin/python"
+      },
+      {
+        "name": "show_traj",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/z_show_traj.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
