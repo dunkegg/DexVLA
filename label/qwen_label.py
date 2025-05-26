@@ -1,8 +1,22 @@
 import os
 from openai import OpenAI
 import json
-from label.prompt import generate_prompt, split_prompt, describe_prompt , fill_descriptions , extract_reasoning_and_conclusion
+from label.prompt import generate_prompt, split_prompt, describe_prompt , fill_descriptions , extract_reasoning_and_conclusion, split_instruction_prompt, extract_ranges_and_descriptions, action_prompt
 from label.utils import get_images_from_path, encode_image, batch_image_indices, create_short_list, map_annotations_to_long_list
+
+from collections import defaultdict
+
+def group_indices_by_string(strings):
+    """
+    Args:
+        strings (List[str]): 一组字符串，例如 new_annotations
+    Returns:
+        Dict[str, List[int]]: 键是字符串内容，值是它出现的所有索引
+    """
+    group_map = defaultdict(list)
+    for i, s in enumerate(strings):
+        group_map[s].append(i)
+    return group_map
 
 class QwenLabeler:
     def __init__(self):
@@ -26,33 +40,71 @@ class QwenLabeler:
         self.client = client
 
 
-    def label_images(self, images, instruction, type):
+    def label_images_action(self, images, sub_tasks):
+
+        groups = group_indices_by_string(sub_tasks)
+
         encoded_images = []
         for image in images:
             base64_image = encode_image(image) # base64 encoding.
             encoded_images.append(base64_image)
         
         labeled_images = [None] *  len(encoded_images)
-        if type == "split":
-            long_list = list(range(len(encoded_images)))
-            short_list = create_short_list(long_list, 2)
-            short_encoded_images = [encoded_images[i] for i in short_list]
-            prompt = split_prompt(instruction, len(short_encoded_images))
-            json_output = self.generate_label(short_encoded_images, prompt)
-            labeled_images = fill_descriptions(len(short_encoded_images), json_output)
-            long_list_with_annotations = map_annotations_to_long_list(short_list, long_list, labeled_images)
-            labeled_images = long_list_with_annotations
 
-        elif type == "describe":
-            batches = batch_image_indices(len(encoded_images), batch_size=10)
-            prompt = describe_prompt()
-            for batch in batches:
-                batch_images = [encoded_images[i] for i in batch] 
-                json_output = self.generate_label(batch_images, prompt)
-                reasoning, conclusion = extract_reasoning_and_conclusion(json_output)
-                for i in batch:
-                    labeled_images[i] = conclusion   
+        for sub_task, indices in groups.items():
+            if sub_task == 'null' or len(indices) == 0:
+                continue
+            sub_encoded_images = [encoded_images[i] for i in indices]
+            prompt = action_prompt(sub_task, len(sub_encoded_images))
+            json_output = self.generate_label(sub_encoded_images, prompt)
+            sub_images = fill_descriptions(len(sub_encoded_images), json_output)
+            index = indices[0]
+            for i in indices:
+                labeled_images[i] = sub_images[i-index]
 
+        return labeled_images
+
+    def label_images_short(self, images, instruction, type, positions = None, rotations = None):
+        encoded_images = []
+        for image in images:
+            base64_image = encode_image(image) # base64 encoding.
+            encoded_images.append(base64_image)
+        
+        labeled_images = [None] *  len(encoded_images)
+
+        long_list = list(range(len(encoded_images)))
+        short_list = create_short_list(long_list, 1)
+        short_encoded_images = [encoded_images[i] for i in short_list]
+        prompt = split_prompt(instruction, len(short_encoded_images))
+        json_output = self.generate_label(short_encoded_images, prompt)
+        labeled_images = fill_descriptions(len(short_encoded_images), json_output)
+        long_list_with_annotations = map_annotations_to_long_list(short_list, long_list, labeled_images)
+        labeled_images = long_list_with_annotations
+
+        return labeled_images
+
+    def label_images_long(self, images, instruction, type, positions = None, rotations = None):
+        encoded_images = []
+        for image in images:
+            base64_image = encode_image(image) # base64 encoding.
+            encoded_images.append(base64_image)
+        
+        labeled_images = [None] *  len(encoded_images)
+
+        prompt = split_instruction_prompt(instruction, len(encoded_images))
+        json_output = self.generate_label(encoded_images, prompt)
+        split_result = extract_ranges_and_descriptions(json_output)
+        for (start_idx, end_idx), sub_instruction in split_result:
+            # 取出当前范围内的图片（base64编码）
+            image_segment = encoded_images[start_idx:end_idx + 1]
+            prompt = split_prompt(sub_instruction, len(image_segment))
+            json_output = self.generate_label(image_segment, prompt)
+            sub_labeled_images = fill_descriptions(len(image_segment), json_output)
+
+            for i, desc in enumerate(sub_labeled_images):
+                labeled_idx = start_idx + i
+                # if 0 <= labeled_idx < len(labeled_images):
+                labeled_images[labeled_idx] = desc
 
 
 
