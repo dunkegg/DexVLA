@@ -155,7 +155,7 @@ data_nav/
 checkpoints/
 loglog/
 unpacked_images/
-
+z_images/
 # Pyre type checker
 .pyre/
 

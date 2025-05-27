@@ -19,7 +19,7 @@
         "name": "show_traj",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/z_show_traj.py",
+        "program": "${workspaceFolder}/z_show_traj_rel.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -29,7 +29,20 @@
         ],
         "python": "/root/miniconda3/envs/dexvla2/bin/python"
       },
-
+      {
+        "name": "process_traj",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/z_process_traj.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+        ],
+        "python": "/root/miniconda3/envs/dexvla2/bin/python"
+      },
       {
         "name": "Debug DexVLA Train",
         "type": "python",
