@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
 from matplotlib.patches import Patch
 from scipy.signal import savgol_filter
-def savitzky_golay_smooth(positions, window_size=100, poly_order=2, threshold=25):
+def savitzky_golay_smooth(positions, window_size=10, poly_order=2, threshold=25):
     """
     使用Savitzky-Golay滤波器平滑轨迹，避免平滑相同的点，并保留连续30个不变点段。
 
@@ -91,62 +91,84 @@ def process_single_hdf5_file(h5_file_path):
     os.makedirs(folder_path, exist_ok=True)
 
     try:
+        with_timestep = False
         with h5py.File(h5_file_path, 'r') as f:
             instruction = f['instruction'][()].decode('utf-8')
             new_annotations = f['annotations_long2'][()]
             # new_annotations = f['annotations_action'][()]
             type_data = f['type'][()].decode('utf-8')
-            abs_pos = f['abs_pos'][:]  # 位置数据，形状 (T, 3)
-            abs_rot = f['abs_rot'][:]  # 旋转数据，形状 (T, 3)
+            rel_pos = f['relative_pos'][:]  # 位置数据，形状 (T, 3)
+            rel_yaw = f['relative_yaw'][:]  # 旋转数据，形状 (T, 3)
+            rel_pos = -np.round(rel_pos, 2)
+            for i in range(len(new_annotations)):
 
-            #smooth
-            abs_pos = savitzky_golay_smooth(abs_pos)
+                k = i*10
+                pos = rel_pos[k]
+                yaw = rel_yaw[k]
+                #smooth
+                pos = savitzky_golay_smooth(pos)
 
 
-            # 计算以第一帧为原点的相对位置
-            first_pos = abs_pos[0]  # 第一帧的绝对位置
-            relative_abs_pos = abs_pos - first_pos  # 所有帧相对于第一帧的位置
+                xs = pos[:, 0]
+                ys = pos[:, 1]
+                zs = pos[:, 2]
 
-            horizon = 50
+                # 创建图形
+                fig, axes = plt.subplots(1, 2, figsize=(12, 12))
 
-            xs = relative_abs_pos[:, 0]
-            ys = relative_abs_pos[:, 1]
-            zs = relative_abs_pos[:, 2]
+                if with_timestep:
+                # 3D 图，展示第一帧相对位置
+                
+                    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
+                    
+                    ts = np.arange(len(xs)) 
 
-            # 插值映射
-            index_mapping = interpolate_annotation_indices(len(new_annotations), len(relative_abs_pos[:, 0]))
+                    ax1.scatter(xs, zs, ts, s=10, c=ts, cmap='viridis', label='Trajectory (Time-encoded)')
 
-            # 分组
-            groups = group_indices_by_string(new_annotations)
+                    ax1.invert_yaxis() 
+                    ax1.set_xlabel('X')
+                    ax1.set_ylabel('Y')
+                    ax1.set_zlabel('timestep')
+                    ax1.set_title(new_annotations[i])
+                else:
+                    ax1 = axes[0]
 
-            # 为每个组分配颜色
-            color_map = get_cmap("tab10")  # 或者 'tab20'
-            string_to_color = {string: color_map(i) for i, string in enumerate(groups)}
+                    ax1.scatter(xs, zs, label='Trajectory (Time-encoded)')
 
-            # 画图
-            fig = plt.figure()
-            # ax1 = fig.add_subplot(111, projection='3d')
-            ax1 = fig.add_subplot(111)
+                    ax1.invert_yaxis() 
+                    ax1.set_xlabel('X')
+                    ax1.set_ylabel('Y')
+                    ax1.set_title(new_annotations[i])
 
-            for i in range(len(xs)):
-                orig_idx = index_mapping[i]
-                label = new_annotations[orig_idx]
-                color = string_to_color[label]
-                # ax1.scatter(xs[i], ys[i], zs[i], color=color)
-                ax1.scatter(xs[i], zs[i], color=color)
+                # 设置相同的尺度：通过手动设置轴的范围
+                x_range = [min(xs), max(xs)]
+                # y_range = [min(ys), max(ys)]
+                z_range = [min(zs), max(zs)]
 
-            legend_patches = []
-            for label, color in string_to_color.items():
-                patch = Patch(color=color, label=label.decode('utf-8'))
-                legend_patches.append(patch)
+                # 计算最大范围
+                # max_range = max(max(x_range[1] - x_range[0], y_range[1] - y_range[0]), z_range[1] - z_range[0])
+                max_range = max(x_range[1] - x_range[0], z_range[1] - z_range[0])
 
-            # 将图例放在右边
-            ax1.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1, 0.5))
-            ax1.invert_yaxis() 
+                # 设置每个轴的范围
+                ax1.set_xlim([min(x_range) - max_range * 0.1, max(x_range) + max_range * 0.1])
+                ax1.set_ylim([min(z_range) - max_range * 0.1, max(z_range) + max_range * 0.1])
+                # ax1.set_zlim([min(z_range) - max_range * 0.1, max(z_range) + max_range * 0.1])
 
-            output_path = "z_trajectory_action.png"  # 自定义路径
-            plt.savefig(output_path, dpi=300, bbox_inches='tight')
-            plt.close(fig)  # 释放资源，防止内存泄露
+
+                # 2D 图，展示第一帧的偏航角度
+                ax2 = axes[1]
+                ax2.plot(range(len(yaw)), yaw, label='yaws', color='g')
+
+                ax2.set_xlabel('Frame Index')
+                ax2.set_ylabel('yaw')
+                ax2.set_title('Yaws')
+
+
+                output_path = f"z_images/rel_{i}.png"  # 自定义路径
+                plt.savefig(output_path, dpi=300, bbox_inches='tight')
+                plt.close(fig)  # 释放资源，防止内存泄露
+
+                # break
             print("down")
 
     except Exception as e:
