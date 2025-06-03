@@ -1,10 +1,17 @@
 TASK_CONFIGS = {
     'example_tasks': { # for local debug
         'dataset_dir': [
-            "data"
+            "data/dexvla"
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist'] # replacing with your real keys in h5py formatted data
+    },
+    'nav_tasks': { # for nav
+        'dataset_dir': [
+            "data/vln"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     }
 }
 

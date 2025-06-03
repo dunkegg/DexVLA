@@ -38,6 +38,9 @@ class EpisodicDataset(torch.utils.data.Dataset):
             self.augment_images = True
         else:
             self.augment_images = False
+
+        self.augment_images = False #wzj
+
         self.transformations = None
         self.rank0_print(f"########################Current Image Size is [{self.data_args.image_size_stable}]###################################")
         self.rank0_print(f"{RED}policy class: {self.policy_class}; augument: {self.augment_images}{RESET}")
@@ -121,6 +124,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         return original_action_shape, action, action_len, image_dict, qpos, qvel, raw_lang, reasoning
 
     def _load_from_h5_nav(self, dataset_path, start_ts):
+        start_ts = 0
         with h5py.File(dataset_path, 'r') as root:
             try: # some legacy data does not have this attribute
                 is_sim = root.attrs['sim']
@@ -130,7 +134,10 @@ class EpisodicDataset(torch.utils.data.Dataset):
             if 'truncate' in dataset_path:
                 compressed = False
             try:
-                raw_lang = root['language_raw'][0].decode('utf-8')
+                raw_lang = root['language_raw'][()].decode('utf-8')
+                #wzj
+                raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+                instruction = root['instruction'][()].decode('utf-8')
             except Exception as e:
                 # self.rank0_print(e)
                 self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
@@ -151,40 +158,37 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
             # get observation at start_ts only
             qpos = root['/observations/qpos'][start_ts]
-            qvel = root['/observations/qvel'][start_ts]
-
+            # qvel = root['/observations/qvel'][start_ts]
+            qvel = root['/observations/qpos'][start_ts]
             image_dict = dict()
-            video_dict = dict()
+            # video_dict = dict()
             n_frames = self.data_args.history_images_length
 
             cam_name = self.camera_names[0]
 
-            image_seq = root[f'/observations/images/{cam_name}']
-            total_frames = image_seq.shape[0]
-
-            start_idx = max(0, start_ts - n_frames + 1)
-            pad_len = max(0, n_frames - (start_ts - start_idx + 1))
+            image_seq = root[f'/observations/images/{cam_name}'][()]
+            history_image_seq = root[f'/observations/history_images'][()]
 
             frames = []
 
-            # 前向补齐逻辑
-            for _ in range(pad_len):
-                img = image_seq[start_idx]
+
+
+            for path_bytes in history_image_seq[-n_frames:]:
+                img_path = path_bytes.decode('utf-8')
+                img = cv2.imread(img_path)
                 if compressed:
                     img = cv2.imdecode(img, 1)
-                img = cv2.resize(img, eval(self.data_args.image_size_stable))
+                img = cv2.resize(img,  eval(self.data_args.image_size_stable))
                 frames.append(img)
 
-            # 正常帧读取
-            for t in range(start_idx, start_ts + 1):
-                img = image_seq[t]
-                if compressed:
-                    img = cv2.imdecode(img, 1)
-                img = cv2.resize(img, eval(self.data_args.image_size_stable))
-                frames.append(img)
+            img_path = image_seq.decode('utf-8')
+            img = cv2.imread(img_path)
+            img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+            frames.append(img)
+
 
             # 存储单帧图像（最后一帧）
-            image_dict[cam_name] = frames[-1]
+            image_dict[cam_name] = frames
 
 
 
@@ -264,7 +268,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
                     raise ValueError(f"Incomplete sample from {dataset_path}")
                 break
             except Exception as e:
-                # self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Fallback {offset} failed: {dataset_path} | {e}")
+                self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Fallback {offset} failed: {dataset_path} | {e}")
                 self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Tried files: {[self.dataset_path_list[episode_id + o] for o in fallback_offsets if 0 <= episode_id + o < len(self.dataset_path_list)]}")
 
         else:
@@ -291,7 +295,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
         all_cam_images = []
         for cam_name in self.camera_names:
             if cam_name in image_dict:
-                all_cam_images.append(image_dict[cam_name])
+                for img in image_dict[cam_name]:
+                    all_cam_images.append(img) #wzj
         all_cam_images = np.stack(all_cam_images, axis=0)
         video = np.stack(video, axis=0)
         # construct observations
@@ -383,7 +388,7 @@ def get_norm_stats(dataset_path_list, rank0_print=print):
         try:
             with h5py.File(dataset_path, 'r') as root:
                 qpos = root['/observations/qpos'][()]
-                qvel = root['/observations/qvel'][()]
+                # qvel = root['/observations/qvel'][()]
                 action = root['/action'][()]
         except Exception as e:
             rank0_print(f'Error loading {dataset_path} in get_norm_stats')
@@ -534,7 +539,7 @@ def load_data(dataset_dir_l, name_filter, camera_names, batch_size_train, batch_
 
     # calculate norm stats corresponding to each kind of task
     rank0_print(f'Norm stats from: {[each.split("/")[-1] for each in stats_dir_l]}')
-    rank0_print(f'train_episode_len_l: {train_episode_len_l}')
+    rank0_print(f'train_episode_len_l: {train_episode_len_l}') #wzjprint
 
 
     robot = 'aloha' if config['action_head_args'].action_dim == 14 or ('aloha' in config['training_args'].output_dir) else 'franka'
