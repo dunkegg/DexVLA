@@ -9,7 +9,7 @@ MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 
 TASKNAME=nav_tasks
 
-OUTPUT=OUTPUT/qwen2_dexvln_prompt
+OUTPUT=OUTPUT/qwen2_dexvln_prompt2
 
 
 deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
@@ -21,7 +21,6 @@ deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --flash_attn True \
   --chunk_size 50 \
   --load_pretrain_dit False \
-  --pretrain_dit_path $DIT_PRETRAIN \
   --policy_head_type $ACTION_HEAD \
   --policy_head_size "ScaleDP_H" \
   --image_size_stable "(320,240)" \
@@ -39,16 +38,16 @@ deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 20000 \
+  --max_steps 3000 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 5000 \
+  --save_steps 1500 \
   --save_total_limit 50 \
   --learning_rate 2e-5 \
   --weight_decay 0. \
   --warmup_ratio 0.01 \
-  --lr_scheduler_type "constant" \
+  --lr_scheduler_type "cosine" \
   --logging_steps 50 \
   --tf32 True \
   --model_max_length 2048 \

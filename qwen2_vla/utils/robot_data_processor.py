@@ -58,7 +58,7 @@ class Qwen2VLAProcess:
             ele['resized_height'] = each.height
             ele['resized_width'] = each.width
         each = fetch_image(ele)
-        return torch.from_numpy(np.array(each))
+        return torch.from_numpy(np.array(each)) 
 
     def forward_process(self, sample, use_reasoning=True):
         # video = False
@@ -70,17 +70,20 @@ class Qwen2VLAProcess:
             images=None
         )
 
-        # image_data = torch.chunk(sample['image'], sample['image'].shape[0], 0)
+        image_data = torch.chunk(sample['image'], sample['image'].shape[0], 0)
 
-        # images_list = []
+        images_list = []
 
-        # for i, each in enumerate(image_data):
-        #     img_pil = self.qwen2_image_preprocess(each, self.camera_names[i])
-        #     images_list.append(img_pil)
+        for i, each in enumerate(image_data):
+            # img_pil = self.qwen2_image_preprocess(each, self.camera_names[i])
+            img_pil = self.qwen2_image_preprocess(each, self.camera_names[0])
+            images_list.append(img_pil)
 
-        # image_data = images_list
-
-        video_inputs = sample['video']
+        image_data = images_list
+        image_data = None
+        # video_inputs = sample['video']
+        video_inputs = [images_list]
+        # video_inputs = None
 
         text = self.multimodal_processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
@@ -88,7 +91,7 @@ class Qwen2VLAProcess:
 
         model_inputs = self.multimodal_processor(
             text=text,
-            images=None,
+            images=image_data,
             videos=video_inputs,
             padding=True,
             return_tensors="pt",
