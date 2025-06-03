@@ -271,7 +271,7 @@ def load_model(config=None, qwen2_vla_config=None, rank0_print=print, tokenizer=
     all_para = sum(p.numel() for n, p in model.named_parameters())
     train_para = sum(p.numel() for n, p in model.named_parameters() if p.requires_grad)
     rank0_print(f"{RED}Lora parameters/trainalbe parameters/all parameters:{lora_para/1000000}M/{train_para/1000000}M/{(all_para-lora_para)/1000000}M{RESET}")
-
+    #wzjprint
     return model, data_args
 
 def maybe_zero_3(param, ignore_status=False, name=None):
