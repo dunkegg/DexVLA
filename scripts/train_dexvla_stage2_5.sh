@@ -7,19 +7,20 @@ ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
 MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 
-TASKNAME=nav_tasks
+TASKNAME=nav_debug
 
-OUTPUT=OUTPUT/qwen2_dexvln_prompt2
+OUTPUT=OUTPUT/qwen2_dexvln_debug_no_film
 
 
 deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning False \
   --lora_enable False \
+  --using_film False \
   --action_dim 3 \
   --state_dim 3 \
   --flash_attn True \
-  --chunk_size 50 \
+  --chunk_size 30 \
   --load_pretrain_dit False \
   --policy_head_type $ACTION_HEAD \
   --policy_head_size "ScaleDP_H" \
@@ -38,11 +39,11 @@ deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 3000 \
+  --max_steps 10000 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 1500 \
+  --save_steps 5000 \
   --save_total_limit 50 \
   --learning_rate 2e-5 \
   --weight_decay 0. \

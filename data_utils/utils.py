@@ -152,6 +152,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
                     except Exception as e:
                         self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
                         exit(0)
+            # action = root['/action'][()][:, :2] #wzj xy
             action = root['/action'][()]
             original_action_shape = action.shape
             episode_len = original_action_shape[0]
@@ -390,6 +391,9 @@ def get_norm_stats(dataset_path_list, rank0_print=print):
                 qpos = root['/observations/qpos'][()]
                 # qvel = root['/observations/qvel'][()]
                 action = root['/action'][()]
+                # #wzj xy
+                # action = action[:, :2]
+                # qpos = qpos[:, :2]
         except Exception as e:
             rank0_print(f'Error loading {dataset_path} in get_norm_stats')
             rank0_print(e)

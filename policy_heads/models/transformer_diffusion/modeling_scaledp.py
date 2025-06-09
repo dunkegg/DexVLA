@@ -201,6 +201,7 @@ class ScaleDP(PreTrainedModel):
             config: ScaleDPPolicyConfig,
     ):
         super().__init__(config)
+        self.train_steps = 0
         # compute number of tokens for main trunk and conScaleDPion encoder
         if config.n_obs_steps is None:
             config.n_obs_steps = config.prediction_horizon
@@ -417,8 +418,65 @@ class ScaleDP(PreTrainedModel):
             loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
             loss = (loss * ~is_pad.unsqueeze(-1)).mean()
             # loss_dict['loss'] = loss
-            return {'loss': loss}
-            # return loss
+            # return {'loss': loss}
+            output = {'loss': loss}
+            output["reconstructed_action"] = None
+            output["noise_pred"] = noise_pred
+            output["steps"] = self.train_steps
+            if self.train_steps % 100 ==0:
+                with torch.no_grad():
+                    B = 1
+                    Tp = self.num_queries
+                    action_dim = self.action_dim
+
+                    # initialize action from Guassian noise
+                    noisy_action = torch.randn((B, Tp, action_dim)).cuda()
+
+                    naction = noisy_action.to(dtype=hidden_states.dtype)
+                    # init scheduler
+                    self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
+
+                    # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
+                    timesteps = self.noise_scheduler.timesteps.tolist()
+
+                    # 找到10的位置
+                    if 10 in timesteps and 0 in timesteps:
+                        idx_10 = timesteps.index(10)
+                        idx_0 = timesteps.index(0)
+
+                        # 替换 [10, 0] 为细化版本
+                        refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+                        timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+
+                        # 更新 scheduler
+                        self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+
+                    for k in self.noise_scheduler.timesteps:
+                        # if k.item() < 2:
+                        #     k = torch.tensor(2, device=k.device, dtype=k.dtype)
+                        # if k.item() == 2:
+                        #     print("wzj")
+                        # predict noise
+                        noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
+
+                        if not torch.all(torch.isfinite(noise_pred)):
+                            print(f"NaN in noise_pred at timestep {k}")
+                            break
+
+                        # inverse diffusion step (remove noise)
+                        step_result = self.noise_scheduler.step(
+                            model_output=noise_pred,
+                            timestep=k,
+                            sample=naction
+                        )
+                        if not torch.all(torch.isfinite(step_result.prev_sample)):
+                            print(f"NaN in naction at timestep {k}")
+                            break
+                        naction = step_result.prev_sample
+
+                    output["reconstructed_action"] = naction  # 可视化用
+            self.train_steps+=1
+            return output
         else:  # inference time
             B = 1
             Tp = self.num_queries
@@ -431,16 +489,36 @@ class ScaleDP(PreTrainedModel):
             # init scheduler
             self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
 
+            # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
+            timesteps = self.noise_scheduler.timesteps.tolist()
+#----------------------------------------------------------------------------------------------------------
+            # 找到10的位置
+            if 10 in timesteps and 0 in timesteps:
+                idx_10 = timesteps.index(10)
+                idx_0 = timesteps.index(0)
+
+                # 替换 [10, 0] 为细化版本
+                refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+                timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+
+                # 更新 scheduler
+                self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+#----------------------------------------------------------------------------------------------------------
+
             for k in self.noise_scheduler.timesteps:
                 # predict noise
                 noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
 
                 # inverse diffusion step (remove noise)
-                naction = self.noise_scheduler.step(
+                step_result = self.noise_scheduler.step(
                     model_output=noise_pred,
                     timestep=k,
                     sample=naction
-                ).prev_sample
+                )                        
+                if not torch.all(torch.isfinite(step_result.prev_sample)):
+                    print(f"NaN in naction at timestep {k}")
+                    break
+                naction = step_result.prev_sample
 
             return naction
 
@@ -457,6 +535,13 @@ class ScaleDP(PreTrainedModel):
         else:
             global_cond = global_cond.squeeze(1)
         global_cond = torch.cat([global_cond, states], dim=-1) if states is not None else global_cond
+
+        # if states is not None:   #wzjjj
+        #     if states.dim() == 2:
+        #         states = states.unsqueeze(1).expand(-1, global_cond.size(1), -1)  # [B, T, D2]
+        #     global_cond = torch.cat([global_cond, states], dim=-1)
+
+
         global_cond = self.combine(global_cond)
 
         if not torch.is_tensor(t):

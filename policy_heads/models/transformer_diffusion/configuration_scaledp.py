@@ -35,7 +35,7 @@ class ScaleDPPolicyConfig(PretrainedConfig):
             model_size: str = "none",
             num_inference_timesteps: int = 10,
             noise_samples: int = 1,
-            num_train_timesteps: int = 100,
+            num_train_timesteps: int = 50,
             is_tinyvla: bool = False,
             **kwargs
     ):
