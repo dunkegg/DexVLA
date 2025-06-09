@@ -18,7 +18,7 @@
           "--action_dim", "3",
           "--state_dim", "3",
           "--flash_attn", "True",
-          "--chunk_size", "50",
+          "--chunk_size", "30",
           "--load_pretrain_dit", "False",
           "--pretrain_dit_path", "checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt",
           "--policy_head_type", "scale_dp_policy",
@@ -26,7 +26,7 @@
           "--image_size_stable", "(320,240)",
           "--image_size_wrist", "(320,240)",
           "--history_images_length", "5",
-          "--task_name", "nav_tasks",
+          "--task_name", "nav_debug",
           "--model_name_or_path", "checkpoints/qwen2_vl",
           "--version", "v0",
           "--enable_distilbert", "False",
@@ -37,8 +37,8 @@
           "--mm_use_im_patch_token", "False",
           "--image_aspect_ratio", "pad",
           "--bf16", "True",
-          "--output_dir", "OUTPUT/qwen2_dexvln_1.5",
-          "--max_steps", "5000",
+          "--output_dir", "OUTPUT/qwen2_dexvln_debug",
+          "--max_steps", "20000",
           "--per_device_train_batch_size", "4",
           "--gradient_accumulation_steps", "1",
           "--save_strategy", "steps",
@@ -58,7 +58,7 @@
           "--policy_class", "scale_dp_policy",
           "--concat", "token_cat",
           "--report_to", "tensorboard",
-          "--logging_dir", "OUTPUT/qwen2_dexvla_debug/log"
+          "--logging_dir", "OUTPUT/log"
         ],
         "python": "/root/envs/dexvla_env/bin/python"
       },
@@ -177,7 +177,21 @@
         },
         "args": [
         ],
-        "python": "/root/miniconda3/envs/dexvla2/bin/python"
+        "python": "/root/envs/dexvla_env/bin/python"
+      },
+      {
+        "name": "eval",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/evaluate/smart_eval_agilex_vln.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+        ],
+        "python": "/root/envs/dexvla_env/bin/python"
       },
     ]
   }

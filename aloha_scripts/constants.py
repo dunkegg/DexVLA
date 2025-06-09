@@ -6,9 +6,16 @@ TASK_CONFIGS = {
         'episode_len': 1000,  
         'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist'] # replacing with your real keys in h5py formatted data
     },
-    'nav_tasks': { # for nav
+    'nav_debug': { # for nav
         'dataset_dir': [
-            "data/vln"
+            "data/debug"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'nav_xy_tasks': { # for nav
+        'dataset_dir': [
+            "data/vln_xy2"
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data

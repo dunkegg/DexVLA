@@ -52,7 +52,7 @@ from transformers.utils import (
 from .configuration_qwen2_vla import Qwen2VLAConfig, Qwen2VLAVisionConfig
 from transformers import AutoConfig, AutoModel
 import gc
-
+from qwen2_vla.models.visualize import plot_actions
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_varlen_func
@@ -1868,6 +1868,7 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
         #     action_hidden_states = distilbert_embeds  # 用它代替原来的hidden_states
         # elif 
         if self.using_film:
+            print("wzj using film")
             action_hidden_states = self.film_forward(labels=labels, input_ids=input_ids,
                                                      hidden_states=hidden_states)
         else: 
@@ -1878,6 +1879,10 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
         loss = {'loss': ret['loss'] + self.llm_loss_weight * llm_loss,
                 'llm_loss': llm_loss,
                 'action_loss': ret['loss']}
+        
+        if ret["reconstructed_action"] is not None:
+            plot_actions(ret["reconstructed_action"], ret["noise_pred"].detach(), actions,  float(ret['loss'].detach().cpu()) ,ret["steps"])
+
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
@@ -1921,8 +1926,8 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
             start = sum(temp.int())
             input_embeddings.append(self.input_action_proj(hidden_states[i, start:end, :]))
             identity.append(torch.mean(hidden_states[i, start:end, :], dim=0))
-
-            reasoning_embeddings.append(self.reasoning_action_proj(hidden_states[i, end:, :]))
+            reason_embed = self.reasoning_action_proj(hidden_states[i, end:, :])
+            reasoning_embeddings.append(reason_embed)
         input_embeddings = torch.cat(input_embeddings, dim=0)
         reasoning_embeddings = torch.cat(reasoning_embeddings, dim=0)
         identity = torch.stack(identity)
@@ -2073,8 +2078,17 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
         all_hidden_states = torch.cat(last_hidden_states, dim=1)
 
         labels_input = torch.ones((1, input_token_len)) * -100
-        labels_output = torch.ones((1, output_ids.shape[1] - input_token_len))
-        labels = torch.cat([labels_input, labels_output], dim=1)
+
+
+        labels = output_ids.clone()
+        labels[:, :input_token_len] = -100 
+        labels_input[0, -1] = output_ids[0, -1]
+        labels = labels_input
+
+
+        # labels_output = torch.ones((1, output_ids.shape[1] - input_token_len))
+        # labels = torch.cat([labels_input, labels_output], dim=1)
+
 
         action_hidden_states = None
 
@@ -2082,6 +2096,8 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
             action_hidden_states = self.film_forward(labels=labels,
                                                      input_ids=output_ids,
                                                      hidden_states=torch.cat(last_hidden_states, dim=1))
+        else:
+            action_hidden_states = torch.cat(last_hidden_states, dim=1)
 
 
         action = self.policy_head(actions, action_hidden_states, states.to(all_hidden_states.dtype), is_pad)

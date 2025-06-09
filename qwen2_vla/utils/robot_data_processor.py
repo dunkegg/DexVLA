@@ -61,8 +61,8 @@ class Qwen2VLAProcess:
         return torch.from_numpy(np.array(each)) 
 
     def forward_process(self, sample, use_reasoning=True):
-        # video = False
-        video = True
+        video = False
+        # video = True
         messages = self.datastruct_droid2llava(sample, video=video)
 
         data_dict = dict(
@@ -80,10 +80,12 @@ class Qwen2VLAProcess:
             images_list.append(img_pil)
 
         image_data = images_list
-        image_data = None
+        
         # video_inputs = sample['video']
         video_inputs = [images_list]
-        # video_inputs = None
+
+        # image_data = None
+        video_inputs = None
 
         text = self.multimodal_processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True

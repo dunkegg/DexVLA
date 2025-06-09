@@ -156,6 +156,10 @@ checkpoints/
 loglog/
 unpacked_images/
 z_images/
+plot_in_train/
+evaluate/plot_action/
+evaluate/plot_action2/
+a_plot_analysis/
 # Pyre type checker
 .pyre/
 
