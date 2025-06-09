@@ -258,7 +258,7 @@ def train_bc(train_dataset=None, val_dataset=None, model=None, config=None, samp
     """
     set_seed(config['training_args'].seed)
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if config['training_args'].bf16 else torch.float32))
-    if config['data_args'].history_images_length > 2:
+    if config['data_args'].history_images_length > 10:
         rank0_print(f"{RED} Using History and Turn to Video mode.{RESET}")
         video = True
     else:

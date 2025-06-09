@@ -33,7 +33,8 @@ def split_h5_file_with_image_paths(hdf5_dir, output_dir, images_dir):
                 subtasks = f['annotations_long2'][()]   # 假设 'annotations' 存在
                 actions = f['/action'][()]# 假设 'type' 存在
                 qposes = f['/observations/qpos'][()]
-                
+                actions = actions[:, :, :2]
+                qposes = qposes[:, :,:2]
                 num_samples = []
                 groups = group_indices_by_string(subtasks)
                 for subtask, indices in groups.items():
@@ -89,4 +90,4 @@ def split_h5_file_with_image_paths(hdf5_dir, output_dir, images_dir):
                     print(f"Saved: {h5_path}")
 
 
-split_h5_file_with_image_paths('data/hdf5', 'data/vln', 'data/images')
+split_h5_file_with_image_paths('data/hdf5', 'data/vln_xy', 'data/images')
