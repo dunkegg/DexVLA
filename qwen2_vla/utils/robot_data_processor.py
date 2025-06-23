@@ -46,9 +46,12 @@ class Qwen2VLAProcess:
         return image.numpy() / 127.5 - 1.0  # [0, 255]->[-1,1]
 
     def qwen2_image_preprocess(self, each, camera_name):
+        
         ele = {
         }
         each = Image.fromarray(each.squeeze(0).permute(1, 2, 0).numpy().astype(np.uint8))
+        return torch.from_numpy(np.array(each)) 
+        return each
         ele['image'] = each
         if 'wrist' in camera_name:
             w, h = eval(self.data_args.image_size_wrist)
@@ -77,6 +80,7 @@ class Qwen2VLAProcess:
         for i, each in enumerate(image_data):
             # img_pil = self.qwen2_image_preprocess(each, self.camera_names[i])
             img_pil = self.qwen2_image_preprocess(each, self.camera_names[0])
+            # img_pil = each
             images_list.append(img_pil)
 
         image_data = images_list

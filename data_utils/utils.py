@@ -137,7 +137,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
                 raw_lang = root['language_raw'][()].decode('utf-8')
                 #wzj
                 raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
-                instruction = root['instruction'][()].decode('utf-8')
+                # instruction = root['instruction'][()].decode('utf-8')
             except Exception as e:
                 # self.rank0_print(e)
                 self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
@@ -173,6 +173,12 @@ class EpisodicDataset(torch.utils.data.Dataset):
             frames = []
 
 
+            assert n_frames<=len(history_image_seq)
+
+            # if n_frames >= len(history_image_seq):  # 临时
+            #     history_image_seq[0] = history_image_seq[1]
+            #     if n_frames > len(history_image_seq):
+            #         history_image_seq = [history_image_seq[0]] * (n_frames - len(history_image_seq)) + history_image_seq
 
             for path_bytes in history_image_seq[-n_frames:]:
                 img_path = path_bytes.decode('utf-8')

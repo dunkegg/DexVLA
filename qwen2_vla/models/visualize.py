@@ -5,7 +5,7 @@ import numpy as np
 
 
 # 创建保存文件夹
-output_dir = "plot_in_train/xy_yaw_50_no_film"
+output_dir = "plot_in_train/follow"
 os.makedirs(output_dir, exist_ok=True)
 
 def plot_actions(predicted_actions, noise_pred, target_actions, loss, step):

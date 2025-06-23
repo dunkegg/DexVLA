@@ -19,6 +19,20 @@ TASK_CONFIGS = {
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'follow_test': { # for nav
+        'dataset_dir': [
+            "data/follow_data/train_test"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'follow': { # for nav
+        'dataset_dir': [
+            "data/follow_data/train_hdf5"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     }
 }
 
