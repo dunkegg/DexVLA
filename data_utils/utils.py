@@ -68,7 +68,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
     def _locate_transition(self, index):
         assert index < self.cumulative_len[-1]
         episode_index = np.argmax(self.cumulative_len > index) # argmax returns first True index
-        start_ts = index - (self.cumulative_len[episode_index] - self.episode_len[episode_index])
+        # start_ts = index - (self.cumulative_len[episode_index] - self.episode_len[episode_index])
+        start_ts = 0
         episode_id = self.episode_ids[episode_index]
         return episode_id, start_ts
 
@@ -403,6 +404,7 @@ def get_norm_stats(dataset_path_list, rank0_print=print):
         except Exception as e:
             rank0_print(f'Error loading {dataset_path} in get_norm_stats')
             rank0_print(e)
+            # continue
             quit()
         all_qpos_data.append(torch.from_numpy(qpos))
         all_action_data.append(torch.from_numpy(action))
@@ -499,42 +501,75 @@ def filter_valid_hdf5(dataset_path_list, rank0_print=print):
     return valid_paths
 
 
-def load_data(dataset_dir_l, name_filter, camera_names, batch_size_train, batch_size_val, chunk_size, config, rank0_print=print, skip_mirrored_data=False, policy_class=None, stats_dir_l=None, sample_weights=None, train_ratio=0.99, llava_pythia_process=None):
-    if type(dataset_dir_l) == str:
+def load_data(dataset_dir_l, name_filter, camera_names,
+              batch_size_train, batch_size_val,
+              chunk_size, config,
+              rank0_print=print, skip_mirrored_data=False,
+              policy_class=None, stats_dir_l=None,
+              sample_weights=None, train_ratio=0.99,
+              llava_pythia_process=None):
+
+    if isinstance(dataset_dir_l, str):
         dataset_dir_l = [dataset_dir_l]
-    # find all data
-    dataset_path_list_list = [find_all_hdf5(dataset_dir, skip_mirrored_data, rank0_print=rank0_print) for dataset_dir in dataset_dir_l]
-    for d,dpl in zip(dataset_dir_l, dataset_path_list_list):
-        if len(dpl) == 0:
-            rank0_print("#2"*20)
-            rank0_print(d)
 
-    num_episodes_0 = len(dataset_path_list_list[0])
-    dataset_path_list = flatten_list(dataset_path_list_list)
-    dataset_path_list = [n for n in dataset_path_list if name_filter(n)]
-    dataset_path_list = filter_valid_hdf5(dataset_path_list, rank0_print)
-    rank0_print(f"{RED}Valid HDF5 files: {len(dataset_path_list)} (filtered from total {sum(len(x) for x in dataset_path_list_list)}){RESET}")
+    # ------------------------------------------------------------------
+    # 1) 构建 “每个数据集” 对应的 h5 列表，并在本层完成所有过滤
+    # ------------------------------------------------------------------
+    dataset_path_list_list = []
+    for d in dataset_dir_l:
+        raw_paths = find_all_hdf5(d, skip_mirrored_data, rank0_print=rank0_print)
+        if len(raw_paths) == 0:
+            rank0_print("#2"*20); rank0_print(d)
 
+        # ① name_filter
+        filtered = [p for p in raw_paths if name_filter(p)]
+        # ② valid h5
+        filtered = filter_valid_hdf5(filtered, rank0_print)
+        dataset_path_list_list.append(filtered)
 
+    # 打印统计
+    total_before = sum(len(find_all_hdf5(d, skip_mirrored_data)) for d in dataset_dir_l)
+    total_after  = sum(len(sub) for sub in dataset_path_list_list)
+    rank0_print(f"{RED}Valid HDF5 files: {total_after} (filtered from total {total_before}){RESET}")
 
-    num_episodes_l = [len(dataset_path_list) for dataset_path_list in dataset_path_list_list]
+    # ------------------------------------------------------------------
+    # 2) 统计每个子数据集 episode 数，再做 train/val split
+    # ------------------------------------------------------------------
+    num_episodes_l      = [len(sub) for sub in dataset_path_list_list]
     num_episodes_cumsum = np.cumsum(num_episodes_l)
 
-    # obtain train test split on dataset_dir_l[0]
+    # 只在第 0 个数据集上随机打散，保持与原逻辑一致
+    num_episodes_0 = num_episodes_l[0]
     shuffled_episode_ids_0 = np.random.permutation(num_episodes_0)
-    train_episode_ids_0 = shuffled_episode_ids_0[:int(train_ratio * num_episodes_0)]
-    val_episode_ids_0 = shuffled_episode_ids_0[int(train_ratio * num_episodes_0):]
-    train_episode_ids_l = [train_episode_ids_0] + [np.arange(num_episodes) + num_episodes_cumsum[idx] for idx, num_episodes in enumerate(num_episodes_l[1:])]
-    val_episode_ids_l = [val_episode_ids_0]
+    cut = int(train_ratio * num_episodes_0)
+    train_episode_ids_0 = shuffled_episode_ids_0[:cut]
+    val_episode_ids_0   = shuffled_episode_ids_0[cut:]
+
+    # 其余数据集全部划入 train（与原实现相同）
+    train_episode_ids_l = [train_episode_ids_0] + [
+        np.arange(n) + num_episodes_cumsum[i]
+        for i, n in enumerate(num_episodes_l[1:])
+    ]
+    val_episode_ids_l   = [val_episode_ids_0]
 
     train_episode_ids = np.concatenate(train_episode_ids_l)
-    val_episode_ids = np.concatenate(val_episode_ids_l)
-    rank0_print(f'\n\nData from: {dataset_dir_l}\n- Train on {[len(x) for x in train_episode_ids_l]} episodes\n- Test on {[len(x) for x in val_episode_ids_l]} episodes\n\n')
+    val_episode_ids   = np.concatenate(val_episode_ids_l)
 
-    _, all_episode_len = get_norm_stats(dataset_path_list)
-    rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)} {RESET}")
-    train_episode_len_l = [[all_episode_len[i] for i in train_episode_ids] for train_episode_ids in train_episode_ids_l]
-    val_episode_len_l = [[all_episode_len[i] for i in val_episode_ids] for val_episode_ids in val_episode_ids_l]
+    rank0_print(
+        f'\n\nData from: {dataset_dir_l}'
+        f'\n- Train on {[len(x) for x in train_episode_ids_l]} episodes'
+        f'\n- Test  on {[len(x) for x in val_episode_ids_l]} episodes\n'
+    )
+
+    # ------------------------------------------------------------------
+    # 3) 后续统计和数据加载逻辑保持不变
+    # ------------------------------------------------------------------
+    dataset_path_list = [p for sub in dataset_path_list_list for p in sub] #same as flatten_list
+    norm_stats, all_episode_len = get_norm_stats(dataset_path_list)
+    rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
+
+    train_episode_len_l = [[all_episode_len[i] for i in ids] for ids in train_episode_ids_l]
+    val_episode_len_l   = [[all_episode_len[i] for i in ids] for ids in val_episode_ids_l]
 
     
     train_episode_len = flatten_list(train_episode_len_l)
@@ -544,12 +579,21 @@ def load_data(dataset_dir_l, name_filter, camera_names, batch_size_train, batch_
     elif type(stats_dir_l) == str:
         stats_dir_l = [stats_dir_l]
 
-    # calculate norm stats across all episodes
-    norm_stats, _ = get_norm_stats(flatten_list([find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print) for stats_dir in stats_dir_l]))
+        # calculate norm stats across all episodes
+        # 计算 norm_stats 前，加一行过滤
+        stats_paths = flatten_list([
+            find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print)
+            for stats_dir in stats_dir_l
+        ])
+
+        stats_paths = filter_valid_hdf5(stats_paths, rank0_print)   # ← 新增
+        norm_stats, _ = get_norm_stats(stats_paths)
+
+    # norm_stats, _ = get_norm_stats(flatten_list([find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print) for stats_dir in stats_dir_l]))
 
     # calculate norm stats corresponding to each kind of task
     rank0_print(f'Norm stats from: {[each.split("/")[-1] for each in stats_dir_l]}')
-    rank0_print(f'train_episode_len_l: {train_episode_len_l}') #wzjprint
+    # rank0_print(f'train_episode_len_l: {train_episode_len_l}') #wzjprint
 
 
     robot = 'aloha' if config['action_head_args'].action_dim == 14 or ('aloha' in config['training_args'].output_dir) else 'franka'

@@ -12,7 +12,7 @@ TASKNAME=follow
 OUTPUT=OUTPUT/qwen2_follow
 
 
-deepspeed --master_port 29604 --include=localhost:0,3,4,5 ./train_vla.py \
+deepspeed --master_port 29604 --include=localhost:1,5 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning False \
   --lora_enable False \

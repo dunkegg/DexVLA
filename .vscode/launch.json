@@ -99,7 +99,7 @@
           "--image_aspect_ratio", "pad",
           "--bf16", "True",
           "--output_dir", "OUTPUT/qwen2_follow_test",
-          "--max_steps", "10000",
+          "--max_steps", "20000",
           "--per_device_train_batch_size", "4",
           "--gradient_accumulation_steps", "1",
           "--save_strategy", "steps",
@@ -164,6 +164,20 @@
         "args": [
         ],
         "python": "/root/miniconda3/envs/dexvla2/bin/python"
+      },
+      {
+        "name": "follow split_task",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/split.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+        ],
+        "python": "/root/envs/dexvla_env/bin/python"
       },
       {
         "name": "split_task",
