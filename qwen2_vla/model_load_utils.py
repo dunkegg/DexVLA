@@ -237,12 +237,12 @@ def load_model(config=None, qwen2_vla_config=None, rank0_print=print, tokenizer=
     vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
     model.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
 
-    for k, v in model.named_parameters():
-        if v.requires_grad:
-            if 'film' in k or 'action_proj' in k:
-                rank0_print(f"{RED}{k}{RESET}", v.requires_grad, v.dtype)
-            else:
-                rank0_print(k, v.requires_grad, v.dtype)
+    # for k, v in model.named_parameters():
+    #     if v.requires_grad:
+    #         if 'film' in k or 'action_proj' in k:
+    #             rank0_print(f"{RED}{k}{RESET}", v.requires_grad, v.dtype)
+    #         else:
+    #             rank0_print(k, v.requires_grad, v.dtype)
 
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 

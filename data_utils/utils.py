@@ -4,6 +4,7 @@ import os
 import h5py
 import pickle
 import fnmatch
+import zarr
 import cv2
 from time import time
 from torch.utils.data import TensorDataset, DataLoader
@@ -12,9 +13,35 @@ from torchvision.transforms.functional import to_pil_image, to_tensor
 import multiprocessing as mp
 import IPython
 import copy
+from tqdm import tqdm
 e = IPython.embed
 from aloha_scripts.utils import *
+import json
 
+import multiprocessing
+def _zarr_open_worker(path, queue):
+    try:
+        arr = zarr.open(path, mode='r')
+        queue.put(arr)
+    except Exception as e:
+        queue.put(e)
+
+def safe_zarr_open(path, timeout=5):
+    ctx = multiprocessing.get_context("spawn")  # 更安全地避免多线程死锁
+    queue = ctx.Queue()
+    p = ctx.Process(target=_zarr_open_worker, args=(path, queue))
+    p.start()
+    p.join(timeout)
+
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        raise TimeoutError(f"Timeout opening Zarr file: {path}")
+
+    result = queue.get()
+    if isinstance(result, Exception):
+        raise result
+    return result
 def flatten_list(l):
     return [item for sublist in l for item in sublist]
 import gc
@@ -73,139 +100,192 @@ class EpisodicDataset(torch.utils.data.Dataset):
         episode_id = self.episode_ids[episode_index]
         return episode_id, start_ts
 
-    def _load_from_h5(self, dataset_path, start_ts):
-        with h5py.File(dataset_path, 'r') as root:
-            try: # some legacy data does not have this attribute
-                is_sim = root.attrs['sim']
-            except:
-                is_sim = False
-            compressed = root.attrs.get('compress', False)
-            if 'truncate' in dataset_path:
-                compressed = False
-            try:
-                raw_lang = root['language_raw'][0].decode('utf-8')
-            except Exception as e:
-                # self.rank0_print(e)
-                self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
-                exit(0)
-            reasoning = " "
-            if self.data_args.use_reasoning:
-                if 'substep_reasonings' in root.keys():
-                    reasoning = root['substep_reasonings'][start_ts].decode('utf-8')
-                else:
-                    try:
-                        reasoning = root['reasoning'][0].decode('utf-8')
-                    except Exception as e:
-                        self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
-                        exit(0)
-            action = root['/action'][()]
-            original_action_shape = action.shape
-            episode_len = original_action_shape[0]
+    def _load_from_nav(self, dataset_path, start_ts=0):
+        is_zarr = dataset_path.endswith(".zarr")
+        raw_lang = ""
+        reasoning = " "
 
-            # get observation at start_ts only
-            qpos = root['/observations/qpos'][start_ts]
-            qvel = root['/observations/qvel'][start_ts]
-            image_dict = dict()
-            for cam_name in self.camera_names:
-                image_dict[cam_name] = root[f'/observations/images/{cam_name}'][start_ts]
-                image_dict[cam_name] = cv2.resize(image_dict[cam_name], eval(self.data_args.image_size_stable))
+        if is_zarr:
+            # root = zarr.open(dataset_path, 'r')
+            root = safe_zarr_open(dataset_path)
+            get_attr = lambda k, default=None: root.attrs.get(k, default)
+            get_item = lambda k: root[k][()]
+            get_at = lambda k, i: root[k][i]
+        else:
+            with h5py.File(dataset_path, 'r') as root:
+                return self._load_from_h5_internal(root, dataset_path, start_ts)
 
-            if compressed:
-                print(f"{RED} It's compressed in {dataset_path} {RESET}")
-                for cam_name in image_dict.keys():
-                    decompressed_image = cv2.imdecode(image_dict[cam_name], 1)
-                    image_dict[cam_name] = np.array(decompressed_image)
+        try:
+            is_sim = get_attr("sim", False)
+        except:
+            is_sim = False
 
-            if is_sim:
-                action = action[start_ts:]
-                action_len = episode_len - start_ts
+        compressed = get_attr("compress", False)
+        if "truncate" in dataset_path:
+            compressed = False
+
+        try:
+            raw_lang = get_item("language_raw")
+            if isinstance(raw_lang, bytes):
+                raw_lang = raw_lang.decode("utf-8")
+        except Exception as e:
+            self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
+            exit(0)
+
+        if self.data_args.use_reasoning:
+            if "substep_reasonings" in root:
+                reasoning = root["substep_reasonings"][start_ts]
             else:
-                action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
-                action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
-        return original_action_shape, action, action_len, image_dict, qpos, qvel, raw_lang, reasoning
+                try:
+                    reasoning = root["reasoning"][0]
+                except Exception as e:
+                    self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
+                    exit(0)
+            if isinstance(reasoning, bytes):
+                reasoning = reasoning.decode("utf-8")
 
-    def _load_from_h5_nav(self, dataset_path, start_ts):
-        start_ts = 0
-        with h5py.File(dataset_path, 'r') as root:
-            try: # some legacy data does not have this attribute
-                is_sim = root.attrs['sim']
-            except:
-                is_sim = False
-            compressed = root.attrs.get('compress', False)
-            if 'truncate' in dataset_path:
-                compressed = False
-            try:
-                raw_lang = root['language_raw'][()].decode('utf-8')
-                #wzj
-                raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
-                # instruction = root['instruction'][()].decode('utf-8')
-            except Exception as e:
-                # self.rank0_print(e)
-                self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
-                exit(0)
-            reasoning = " "
-            if self.data_args.use_reasoning:
-                if 'substep_reasonings' in root.keys():
-                    reasoning = root['substep_reasonings'][start_ts].decode('utf-8')
-                else:
-                    try:
-                        reasoning = root['reasoning'][0].decode('utf-8')
-                    except Exception as e:
-                        self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
-                        exit(0)
-            # action = root['/action'][()][:, :2] #wzj xy
-            action = root['/action'][()]
-            original_action_shape = action.shape
-            episode_len = original_action_shape[0]
+        action = get_item("/action")
+        original_action_shape = action.shape
+        episode_len = original_action_shape[0]
 
-            # get observation at start_ts only
-            qpos = root['/observations/qpos'][start_ts]
-            # qvel = root['/observations/qvel'][start_ts]
-            qvel = root['/observations/qpos'][start_ts]
-            image_dict = dict()
-            # video_dict = dict()
-            n_frames = self.data_args.history_images_length
+        qpos = root["/observations/qpos"][start_ts]
+        # qvel = root["/observations/qvel"][start_ts]
+        qvel = root["/observations/qpos"][start_ts]
 
-            cam_name = self.camera_names[0]
+        image_dict = dict()
+        # video_dict = dict()
+        n_frames = self.data_args.history_images_length
 
-            image_seq = root[f'/observations/images/{cam_name}'][()]
-            history_image_seq = root[f'/observations/history_images'][()]
+        cam_name = self.camera_names[0]
 
-            frames = []
+        image_seq = root[f'/observations/images/{cam_name}'][()]
+        history_image_seq = root[f'/observations/history_images'][()]
+
+        frames = []
 
 
-            assert n_frames<=len(history_image_seq)
+        assert n_frames<=len(history_image_seq)
 
-            # if n_frames >= len(history_image_seq):  # 临时
-            #     history_image_seq[0] = history_image_seq[1]
-            #     if n_frames > len(history_image_seq):
-            #         history_image_seq = [history_image_seq[0]] * (n_frames - len(history_image_seq)) + history_image_seq
+        # if n_frames >= len(history_image_seq):  # 临时
+        #     history_image_seq[0] = history_image_seq[1]
+        #     if n_frames > len(history_image_seq):
+        #         history_image_seq = [history_image_seq[0]] * (n_frames - len(history_image_seq)) + history_image_seq
+        rank = int(os.environ.get("RANK", 0))
 
-            for path_bytes in history_image_seq[-n_frames:]:
-                img_path = path_bytes.decode('utf-8')
-                img = cv2.imread(img_path)
-                if compressed:
-                    img = cv2.imdecode(img, 1)
-                img = cv2.resize(img,  eval(self.data_args.image_size_stable))
-                frames.append(img)
-
-            img_path = image_seq.decode('utf-8')
+        for img_path in history_image_seq[-n_frames:]:
+            img_path = img_path.replace("frames/", f"frames_{rank}/")
             img = cv2.imread(img_path)
+            if compressed:
+                img = cv2.imdecode(img, 1)
             img = cv2.resize(img,  eval(self.data_args.image_size_stable))
             frames.append(img)
 
+        img_path = img_path = image_seq
+        img_path = img_path.replace("frames/", f"frames_{rank}/")
+        img = cv2.imread(img_path)
+        img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+        frames.append(img)
 
-            # 存储单帧图像（最后一帧）
-            image_dict[cam_name] = frames
+
+        # 存储单帧图像（最后一帧）
+        image_dict[cam_name] = frames
 
 
 
-            if is_sim:
-                action = action[start_ts:]
-                action_len = episode_len - start_ts
+        if is_sim:
+            action = action[start_ts:]
+            action_len = episode_len - start_ts
+        else:
+            action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
+            action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
+
+        return original_action_shape, action, action_len, image_dict, frames, qpos, qvel, raw_lang, reasoning
+
+    def _load_from_h5_internal(self,root, dataset_path, start_ts):
+        start_ts = 0
+
+        try: # some legacy data does not have this attribute
+            is_sim = root.attrs['sim']
+        except:
+            is_sim = False
+        compressed = root.attrs.get('compress', False)
+        if 'truncate' in dataset_path:
+            compressed = False
+        try:
+            raw_lang = root['language_raw'][()].decode('utf-8')
+            #wzj
+            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            # instruction = root['instruction'][()].decode('utf-8')
+        except Exception as e:
+            # self.rank0_print(e)
+            self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
+            exit(0)
+        reasoning = " "
+        if self.data_args.use_reasoning:
+            if 'substep_reasonings' in root.keys():
+                reasoning = root['substep_reasonings'][start_ts].decode('utf-8')
             else:
-                action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
-                action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
+                try:
+                    reasoning = root['reasoning'][0].decode('utf-8')
+                except Exception as e:
+                    self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
+                    exit(0)
+        # action = root['/action'][()][:, :2] #wzj xy
+        action = root['/action'][()]
+        original_action_shape = action.shape
+        episode_len = original_action_shape[0]
+
+        # get observation at start_ts only
+        qpos = root['/observations/qpos'][start_ts]
+        # qvel = root['/observations/qvel'][start_ts]
+        qvel = root['/observations/qpos'][start_ts]
+        image_dict = dict()
+        # video_dict = dict()
+        n_frames = self.data_args.history_images_length
+
+        cam_name = self.camera_names[0]
+
+        image_seq = root[f'/observations/images/{cam_name}'][()]
+        history_image_seq = root[f'/observations/history_images'][()]
+
+        frames = []
+
+
+        assert n_frames<=len(history_image_seq)
+
+        # if n_frames >= len(history_image_seq):  # 临时
+        #     history_image_seq[0] = history_image_seq[1]
+        #     if n_frames > len(history_image_seq):
+        #         history_image_seq = [history_image_seq[0]] * (n_frames - len(history_image_seq)) + history_image_seq
+        rank = int(os.environ.get("RANK", 0))
+        for path_bytes in history_image_seq[-n_frames:]:
+            img_path = path_bytes.decode('utf-8')
+            img_path = img_path.replace("frames/", f"frames_{rank}/")
+            img = cv2.imread(img_path)
+            if compressed:
+                img = cv2.imdecode(img, 1)
+            img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+            frames.append(img)
+
+        img_path = image_seq.decode('utf-8')
+        img_path = img_path.replace("frames/", f"frames_{rank}/")
+        img = cv2.imread(img_path)
+        img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+        frames.append(img)
+
+
+        # 存储单帧图像（最后一帧）
+        image_dict[cam_name] = frames
+
+
+
+        if is_sim:
+            action = action[start_ts:]
+            action_len = episode_len - start_ts
+        else:
+            action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
+            action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
+
         return original_action_shape, action, action_len, image_dict, frames, qpos, qvel, raw_lang, reasoning
 
 
@@ -271,7 +351,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
                     qvel,
                     raw_lang,
                     reasoning
-                ) = self._load_from_h5_nav(dataset_path, start_ts)
+                ) = self._load_from_nav(dataset_path, start_ts)
                 if raw_lang is None or action is None or image_dict is None:
                     raise ValueError(f"Incomplete sample from {dataset_path}")
                 break
@@ -387,20 +467,42 @@ class EpisodicDataset(torch.utils.data.Dataset):
         return self.llava_pythia_process.forward_process(sample, use_reasoning=self.data_args.use_reasoning)
 
 
-def get_norm_stats(dataset_path_list, rank0_print=print):
+def get_norm_stats(dataset_path_list, rank0_print=print,  cache_path="norm_stats.json"):
+    # 如果缓存文件存在，直接加载
+    if os.path.exists(cache_path):
+        rank0_print(f"[INFO] Loading cached norm stats from {cache_path}")
+        with open(cache_path, "r") as f:
+            stats = json.load(f)
+
+        # 还原 numpy 格式
+        keys_to_np = ["action_mean", "action_std", "action_min", "action_max", "qpos_mean", "qpos_std", "example_qpos"]
+        for k in keys_to_np:
+            stats[k] = np.array(stats[k])
+
+        # 还原 episode lens
+        ep_len_val = stats.get("episode_len_value", None)
+        ep_len_count = stats.get("episode_len_count", 0)
+        episode_lens = [ep_len_val] * ep_len_count if ep_len_val is not None else None
+
+        return stats, episode_lens    
+    
     all_qpos_data = []
     all_action_data = []
     all_episode_len = []
 
-    for dataset_path in dataset_path_list:
+    for dataset_path in tqdm(dataset_path_list, desc="Get Norm Loading datasets"):
         try:
-            with h5py.File(dataset_path, 'r') as root:
-                qpos = root['/observations/qpos'][()]
-                # qvel = root['/observations/qvel'][()]
-                action = root['/action'][()]
-                # #wzj xy
-                # action = action[:, :2]
-                # qpos = qpos[:, :2]
+            if dataset_path.endswith(".hdf5") or dataset_path.endswith(".h5"):
+                with h5py.File(dataset_path, 'r') as root:
+                    qpos = root['/observations/qpos'][()]
+                    action = root['/action'][()]
+            elif dataset_path.endswith(".zarr"):
+                # root = zarr.open(dataset_path, mode='r')
+                root = safe_zarr_open(dataset_path)
+                qpos = root['/observations/qpos'][:]
+                action = root['/action'][:]
+            else:
+                raise ValueError(f"Unsupported dataset format: {dataset_path}")
         except Exception as e:
             rank0_print(f'Error loading {dataset_path} in get_norm_stats')
             rank0_print(e)
@@ -426,10 +528,38 @@ def get_norm_stats(dataset_path_list, rank0_print=print):
     action_max = all_action_data.max(dim=0).values.float()
 
     eps = 0.0001
-    stats = {"action_mean": action_mean.numpy(), "action_std": action_std.numpy(),
-             "action_min": action_min.numpy() - eps,"action_max": action_max.numpy() + eps,
-             "qpos_mean": qpos_mean.numpy(), "qpos_std": qpos_std.numpy(),
-             "example_qpos": qpos}
+    # stats = {"action_mean": action_mean.numpy(), "action_std": action_std.numpy(),
+    #          "action_min": action_min.numpy() - eps,"action_max": action_max.numpy() + eps,
+    #          "qpos_mean": qpos_mean.numpy(), "qpos_std": qpos_std.numpy(),
+    #          "example_qpos": qpos}
+    stats = {
+        "action_mean": action_mean.numpy().tolist(),
+        "action_std": action_std.numpy().tolist(),
+        "action_min": (action_min - eps).numpy().tolist(),
+        "action_max": (action_max + eps).numpy().tolist(),
+        "qpos_mean": qpos_mean.numpy().tolist(),
+        "qpos_std": qpos_std.numpy().tolist(),
+        "example_qpos": qpos.tolist(),
+    }
+    # 简化 episode_lens 缓存
+    if len(set(all_episode_len)) == 1:
+        stats["episode_len_value"] = all_episode_len[0]
+        stats["episode_len_count"] = len(all_episode_len)
+    else:
+        rank0_print("[WARN] episode_len 不一致，未压缩缓存")
+        stats["episode_lens"] = all_episode_len  # fallback to full list
+
+    # 写入 JSON 缓存
+    with open(cache_path, "w") as f:
+        json.dump(stats, f, indent=2)
+    rank0_print(f"[INFO] Saved norm stats to {cache_path}")
+    stats["action_mean"] = action_mean.numpy()
+    stats["action_std"] = action_std.numpy()
+    stats["action_min"] = (action_min - eps).numpy()
+    stats["action_max"] = (action_max + eps).numpy()
+    stats["qpos_mean"] = qpos_mean.numpy()
+    stats["qpos_std"] = qpos_std.numpy()
+    stats["example_qpos"] = qpos
 
     return stats, all_episode_len
 
@@ -459,20 +589,52 @@ def get_norm_stats_by_tasks(dataset_path_list):
     return norm_stats_tasks
 
 
+# def find_all_hdf5(dataset_dir, skip_mirrored_data, rank0_print=print):
+#     hdf5_files = []
+#     for root, dirs, files in os.walk(dataset_dir):
+#         if 'pointcloud' in root: continue
+#         for filename in fnmatch.filter(files, '*.hdf5'):
+#             if 'features' in filename: continue
+#             if skip_mirrored_data and 'mirror' in filename:
+#                 continue
+#             hdf5_files.append(os.path.join(root, filename))
+#     if len(hdf5_files) == 0:
+#         rank0_print(f"{RED} Found 0 hdf5 datasets found in {dataset_dir} {RESET}")
+#         exit(0)
+#     rank0_print(f'Found {len(hdf5_files)} hdf5 files')
+#     return hdf5_files
+
+
 def find_all_hdf5(dataset_dir, skip_mirrored_data, rank0_print=print):
-    hdf5_files = []
-    for root, dirs, files in os.walk(dataset_dir):
-        if 'pointcloud' in root: continue
+    dataset_paths = []
+
+    for root, dirs, files in tqdm(os.walk(dataset_dir), desc="Walking through dataset"):
+        # print(f"Processing {root}, {len(files)} files")
+        if 'pointcloud' in root:
+            continue
+
+        # HDF5 文件匹配
         for filename in fnmatch.filter(files, '*.hdf5'):
-            if 'features' in filename: continue
+            if 'features' in filename:
+                continue
             if skip_mirrored_data and 'mirror' in filename:
                 continue
-            hdf5_files.append(os.path.join(root, filename))
-    if len(hdf5_files) == 0:
-        rank0_print(f"{RED} Found 0 hdf5 datasets found in {dataset_dir} {RESET}")
+            dataset_paths.append(os.path.join(root, filename))
+
+        # Zarr 目录匹配
+        for dirname in dirs:
+            if not dirname.endswith(".zarr"):
+                continue
+            if skip_mirrored_data and 'mirror' in dirname:
+                continue
+            dataset_paths.append(os.path.join(root, dirname))
+
+    if len(dataset_paths) == 0:
+        rank0_print(f"{RED} Found 0 datasets in {dataset_dir} {RESET}")
         exit(0)
-    rank0_print(f'Found {len(hdf5_files)} hdf5 files')
-    return hdf5_files
+
+    rank0_print(f'Found {len(dataset_paths)} dataset files (hdf5/zarr)')
+    return dataset_paths
 
 def BatchSampler(batch_size, episode_len_l, sample_weights):
     sample_probs = np.array(sample_weights) / np.sum(sample_weights) if sample_weights is not None else None
@@ -487,15 +649,26 @@ def BatchSampler(batch_size, episode_len_l, sample_weights):
 
 def filter_valid_hdf5(dataset_path_list, rank0_print=print):
     valid_paths = []
-    for path in dataset_path_list:
+    for path in tqdm(dataset_path_list, desc="Filter Loading datasets"):
         try:
-            with h5py.File(path, 'r') as f:
-                # 简单读取关键字段进行验证
-                if '/action' not in f:
+            if path.endswith(".hdf5") or path.endswith(".h5"):
+                with h5py.File(path, 'r') as f:
+                    if '/action' not in f:
+                        raise ValueError("Missing /action key")
+                    _ = f['/action'][()]  # 检查能否读取
+
+            elif path.endswith(".zarr"):
+                # root = zarr.open(path, mode='r')
+                root = safe_zarr_open(path)
+                if '/action' not in root:
                     raise ValueError("Missing /action key")
-                _ = f['/action'][()]  # 检查能否读取
+                _ = root['/action'][()]  # 检查能否读取
+
+            else:
+                raise ValueError(f"Unsupported dataset format: {path}")
+
         except Exception as e:
-            rank0_print(f"[WARN] Skipping broken hdf5 file: {path} | {type(e).__name__}: {e}")
+            rank0_print(f"[WARN] Skipping broken file: {path} | {type(e).__name__}: {e}")
             continue
         valid_paths.append(path)
     return valid_paths
@@ -516,22 +689,28 @@ def load_data(dataset_dir_l, name_filter, camera_names,
     # 1) 构建 “每个数据集” 对应的 h5 列表，并在本层完成所有过滤
     # ------------------------------------------------------------------
     dataset_path_list_list = []
+    total_before=0
     for d in dataset_dir_l:
+        rank = int(os.environ.get("RANK", 0))
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!   Rank: {rank}, data path {d}")
+        d = d + f"_{rank}"
         raw_paths = find_all_hdf5(d, skip_mirrored_data, rank0_print=rank0_print)
         if len(raw_paths) == 0:
             rank0_print("#2"*20); rank0_print(d)
-
+        total_before += len(raw_paths)  # 累加原始文件数
         # ① name_filter
         filtered = [p for p in raw_paths if name_filter(p)]
         # ② valid h5
-        filtered = filter_valid_hdf5(filtered, rank0_print)
+        # filtered = filter_valid_hdf5(filtered, rank0_print) !!!!
         dataset_path_list_list.append(filtered)
 
-    # 打印统计
-    total_before = sum(len(find_all_hdf5(d, skip_mirrored_data)) for d in dataset_dir_l)
-    total_after  = sum(len(sub) for sub in dataset_path_list_list)
+    # # 打印统计
+    # total_before = sum(len(find_all_hdf5(d, skip_mirrored_data)) for d in dataset_dir_l)
+    # total_after  = sum(len(sub) for sub in dataset_path_list_list)
+    # rank0_print(f"{RED}Valid HDF5 files: {total_after} (filtered from total {total_before}){RESET}")
+    # 直接使用已缓存的数据打印统计
+    total_after = sum(len(sub) for sub in dataset_path_list_list)
     rank0_print(f"{RED}Valid HDF5 files: {total_after} (filtered from total {total_before}){RESET}")
-
     # ------------------------------------------------------------------
     # 2) 统计每个子数据集 episode 数，再做 train/val split
     # ------------------------------------------------------------------
@@ -565,7 +744,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
     # 3) 后续统计和数据加载逻辑保持不变
     # ------------------------------------------------------------------
     dataset_path_list = [p for sub in dataset_path_list_list for p in sub] #same as flatten_list
-    norm_stats, all_episode_len = get_norm_stats(dataset_path_list)
+    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/follow_data/norm_stats.json")
     rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
 
     train_episode_len_l = [[all_episode_len[i] for i in ids] for ids in train_episode_ids_l]

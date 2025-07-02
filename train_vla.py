@@ -304,6 +304,8 @@ def train_bc(train_dataset=None, val_dataset=None, model=None, config=None, samp
 
 
 def main(all_config=None, model_config=None):
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))  # torchrun 会自动传这个环境变量
+    device = torch.device(f"cuda:{local_rank}")
     """
     Main training function for the VLA (Vision-Language-Action) model.
 
@@ -368,6 +370,8 @@ def main(all_config=None, model_config=None):
 
 
 if __name__ == '__main__':
+    torch.multiprocessing.set_start_method("spawn", force=True)
+    
     model_args, data_args, training_args, action_head_args, model_config, bnb_model_from_pretrained_args = parse_param()
     config = {
         'model_args':model_args,

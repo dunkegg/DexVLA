@@ -27,9 +27,30 @@ TASK_CONFIGS = {
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     },
-    'follow': { # for nav
+    'follow_zarr': { # for nav
         'dataset_dir': [
-            "data/follow_data/train_hdf5"
+            "data/follow_data/train_zarr"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'follow_zarr2': { # for nav
+        'dataset_dir': [
+            "data/follow_data/train_zarr2"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'follow_hdf5': { # for nav
+        'dataset_dir': [
+            "data/follow_data/train_hdf5/train_hdf5"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'follow_hdf5_2': { # for nav
+        'dataset_dir': [
+            "data/follow_data/train_hdf5_2"
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data

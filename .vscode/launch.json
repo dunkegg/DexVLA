@@ -87,7 +87,7 @@
           "--image_size_stable", "(320,240)",
           "--image_size_wrist", "(320,240)",
           "--history_images_length", "9",
-          "--task_name", "follow",
+          "--task_name", "follow_hdf5",
           "--model_name_or_path", "checkpoints/qwen2_vl",
           "--version", "v0",
           "--enable_distilbert", "False",
@@ -99,11 +99,11 @@
           "--image_aspect_ratio", "pad",
           "--bf16", "True",
           "--output_dir", "OUTPUT/qwen2_follow_test",
-          "--max_steps", "20000",
-          "--per_device_train_batch_size", "4",
+          "--max_steps", "80000",
+          "--per_device_train_batch_size", "2",
           "--gradient_accumulation_steps", "1",
           "--save_strategy", "steps",
-          "--save_steps", "5000",
+          "--save_steps", "10000",
           "--save_total_limit", "50",
           "--learning_rate", "2e-5",
           "--weight_decay", "0.",
@@ -121,7 +121,7 @@
           "--report_to", "tensorboard",
           "--logging_dir", "OUTPUT/log"
         ],
-        "python": "/root/envs/dexvla_env/bin/python"
+        "python": "/wangzejin/dexvla_env/bin/python"
       },
       {
         "name": "label",

@@ -423,7 +423,7 @@ class ScaleDP(PreTrainedModel):
             output["reconstructed_action"] = None
             output["noise_pred"] = noise_pred
             output["steps"] = self.train_steps
-            if self.train_steps % 100 ==0:
+            if self.train_steps % 250 ==0:
                 with torch.no_grad():
                     B = 1
                     Tp = self.num_queries

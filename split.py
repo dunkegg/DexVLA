@@ -184,13 +184,13 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
 
 
         print(f"Already has {sum} episodes")
-        # if sum > 10000:
-        #     break
+        if sum > 1000:
+            break
 
 if __name__ == "__main__":
     # 设置源目录和目标目录
     src_dir = "/wangzejin/code/DexVLA/data/follow_data/proc"  # 当前目录
-    dst_dir = "/wangzejin/code/DexVLA/data/follow_data/train_zarr"  # 输出目录
+    dst_dir = "/wangzejin/code/DexVLA/data/follow_data/train_test_zarr"  # 输出目录
     # 设置要保存的key
 
     process_all_hdf5_in_directory(src_dir, dst_dir)
