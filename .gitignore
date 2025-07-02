@@ -152,6 +152,7 @@ robomimic-r2d2.zip
 OUTPUT/
 data/
 data_nav/
+test_data/
 checkpoints/
 loglog/
 unpacked_images/

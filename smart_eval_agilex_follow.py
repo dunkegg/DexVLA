@@ -187,8 +187,8 @@ def eval_bc(i,policy, deploy_env, policy_config, raw_lang=None, query_frequency=
                                 torch.chunk(all_actions, chunks=all_actions.shape[1], dim=1)[0:30])
                         
 
-                        actions,raw_lang = deploy_env.get_info()
-                        plot_actions(i,all_actions[0], actions, raw_lang, post_process, frames)
+                        actions,origin_lang = deploy_env.get_info()
+                        plot_actions(i,all_actions[0], actions, origin_lang, post_process, frames)
                         break
                     ####################################################################################################################################
                     # clear previous actions
@@ -218,7 +218,7 @@ class FakeRobotEnv():
         self.images = None
         self.states = None
         self.actions = None
-        self.raw_lang = None
+        self.origin_lang = None
     def step(self, action):
         print("Execute action successfully!!!")
 
@@ -235,16 +235,16 @@ class FakeRobotEnv():
         states = self.states
         return obs, states
     
-    def set_info(self,actions,raw_lang):
+    def set_info(self,actions,origin_lang):
         self.actions = actions
-        self.raw_lang = raw_lang
+        self.origin_lang = origin_lang
     def get_info(self):
-        return self.actions, self.raw_lang
+        return self.actions, self.origin_lang
 
 if __name__ == '__main__':
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>hyper parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     action_head = 'scale_dp_policy'  # or 'unet_diffusion_policy'
-    query_frequency = 16
+    query_frequency = 30
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
         "model_path": "OUTPUT/qwen2_dexvln_debug/checkpoint-5000",
@@ -274,7 +274,7 @@ if __name__ == '__main__':
     #######################################
     import os
 
-    folder_path = 'data/test2'
+    folder_path = 'test_data/follow'
     test_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
 
     for i, file_path in enumerate(test_files):

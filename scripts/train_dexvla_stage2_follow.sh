@@ -40,10 +40,10 @@ deepspeed --master_port 29604 --include=localhost:0,1,2,3 ./train_vla.py \
   --bf16 True \
   --output_dir $OUTPUT \
   --max_steps 80000 \
-  --per_device_train_batch_size 4 \
+  --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 10000 \
+  --save_steps 20000 \
   --save_total_limit 50 \
   --learning_rate 2e-5 \
   --weight_decay 0. \

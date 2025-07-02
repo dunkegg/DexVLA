@@ -5,16 +5,20 @@ import numpy as np
 import cv2
 
 # 创建保存文件夹
-output_dir = "evaluate/plot_action2"
+output_dir = "visulization"
 os.makedirs(output_dir, exist_ok=True)
 
 def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, frames):
-    # for idx, img in enumerate(frames):
-    #     out_path = os.path.join(output_dir, f"case_{i}_frame_{idx:04d}.png")  # 命名格式: frame_0000.png
-    #     cv2.imwrite(out_path, img)
+    save_path = os.path.join(output_dir, f"test_{i}")
 
-    out_path = os.path.join(output_dir, f"case_{i}.png")  # 命名格式: frame_0000.png
-    cv2.imwrite(out_path, frames[0])
+    os.makedirs(save_path, exist_ok=True)  
+
+    for idx, img in enumerate(frames):
+        out_path = os.path.join(save_path, f"frame_{idx:04d}.png")  # 命名格式: frame_0000.png
+        cv2.imwrite(out_path, img)
+
+    # out_path = os.path.join(output_dir, f"case_{i}.png")  # 命名格式: frame_0000.png
+    # cv2.imwrite(out_path, frames[0])
 
     # 颜色设置
     pred_color = 'tab:orange'
