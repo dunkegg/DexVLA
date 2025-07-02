@@ -8,7 +8,7 @@ from policy_heads import *
 from qwen2_vla.utils.image_processing_qwen2_vla import *
 import h5py
 import cv2
-from visualize_action import plot_actions
+from evaluate.visualize_action import plot_actions
 
 
 def pre_process(robot_state_value, key, stats):
@@ -82,7 +82,7 @@ class qwen2_vla_policy:
         if len(curr_image.shape) == 5:  # 1,2,3,270,480
             curr_image = curr_image.squeeze(0)
 
-        messages = self.datastruct_droid2qwen2vla(raw_lang)
+        
         image_data = torch.chunk(curr_image, curr_image.shape[0], dim=0)  # top, left_wrist, right_wrist
         image_list = []
         for i, each in enumerate(image_data):
@@ -93,6 +93,8 @@ class qwen2_vla_policy:
             ele['resized_width'] = 320
 
             image_list.append(torch.from_numpy(np.array(each)))
+
+
         # image_data = image_data / 255.0
         image_data = image_list
         ######################
@@ -100,6 +102,7 @@ class qwen2_vla_policy:
         # image_data = None
         video_inputs=None
         ######################
+        messages = self.datastruct_droid2qwen2vla(raw_lang,len(image_list))
         text = self.multimodal_processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -183,12 +186,12 @@ def eval_bc(i,policy, deploy_env, policy_config, raw_lang=None, query_frequency=
                         # print(signature(policy.policy.generate))
                         all_actions, outputs = policy.policy.evaluate(**batch, is_eval=True, tokenizer=policy.tokenizer)
 
-                        action_queue.extend(
-                                torch.chunk(all_actions, chunks=all_actions.shape[1], dim=1)[0:30])
+                        # action_queue.extend(
+                        #         torch.chunk(all_actions, chunks=all_actions.shape[1], dim=1)[0:30])
                         
 
-                        actions,origin_lang = deploy_env.get_info()
-                        plot_actions(i,all_actions[0], actions, origin_lang, post_process, frames)
+                        origin_actions,origin_lang = deploy_env.get_info()
+                        plot_actions(i,all_actions[0], origin_actions, origin_lang, post_process, frames)
                         break
                     ####################################################################################################################################
                     # clear previous actions
@@ -247,7 +250,7 @@ if __name__ == '__main__':
     query_frequency = 30
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/qwen2_dexvln_debug/checkpoint-5000",
+        "model_path": "OUTPUT/qwen2_follow_20000/checkpoint-20000",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune
@@ -275,12 +278,13 @@ if __name__ == '__main__':
     import os
 
     folder_path = 'test_data/follow'
+
     test_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
 
     for i, file_path in enumerate(test_files):
-
+        print(f"Test case {i}")
         with h5py.File(file_path, 'r') as f:
-            instruction = f['instruction']
+            # instruction = f['instruction']
             observsation = f['/observations/images/cam_high'][()]
             history_images = f['/observations/history_images'][()]   # 假设 'annotations' 存在\
             language_raw = f['language_raw'][()].decode('utf-8')
@@ -290,22 +294,35 @@ if __name__ == '__main__':
         raw_lang =language_raw
         raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
         frames = []
-
-
-        n_frames = 5
         compressed = False
-        for path_bytes in history_images[-n_frames:]:
+
+        # n_frames = 9
+        # # for path_bytes in history_images[-n_frames:]:
+        # for path_bytes in history_images[-5:]:
+        #     img_path = path_bytes.decode('utf-8')
+        #     img_path = img_path.replace("frames/", f"frames_{0}/")
+        #     img = cv2.imread(img_path)
+        #     if compressed:
+        #         img = cv2.imdecode(img, 1)
+        #     img = cv2.resize(img,  eval("(320,240)"))
+        #     frames.append(img)
+
+        # img_path = observsation.decode('utf-8')
+        # img_path = img_path.replace("frames/", f"frames_{0}/")
+        # img = cv2.imread(img_path)
+        # img = cv2.resize(img,  eval("(320,240)"))
+        # frames.append(img)
+
+
+        for path_bytes in history_images[:4]:
             img_path = path_bytes.decode('utf-8')
+            img_path = img_path.replace("frames/", f"frames_{0}/")
             img = cv2.imread(img_path)
             if compressed:
                 img = cv2.imdecode(img, 1)
             img = cv2.resize(img,  eval("(320,240)"))
             frames.append(img)
 
-        img_path = observsation.decode('utf-8')
-        img = cv2.imread(img_path)
-        img = cv2.resize(img,  eval("(320,240)"))
-        frames.append(img)
 
         agilex_bot.set_obs(frames, qposes[0])
         agilex_bot.set_info(actions, language_raw)

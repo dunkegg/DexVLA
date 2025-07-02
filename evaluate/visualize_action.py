@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 
 # 创建保存文件夹
-output_dir = "visulization"
+output_dir = "test_data/visulization3"
 os.makedirs(output_dir, exist_ok=True)
 
 def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, frames):
@@ -48,8 +48,8 @@ def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, fr
     pred = np.concatenate([pred_xy, pred_yaw], axis=1)
 
 
-    target[:, 0] = -target[:, 0]
-    pred[:, 0] = -pred[:, 0]
+    # target[:, 0] = -target[:, 0]
+    # pred[:, 0] = -pred[:, 0]
     # pred[:, 1] = -pred[:, 1]
 
     # ===== XY plot =====
@@ -97,7 +97,7 @@ def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, fr
 
     # ===== Save figure =====
     plt.tight_layout()
-    save_path = os.path.join(output_dir, f"case_{i}_actions.png")
+    save_path = os.path.join(save_path, f"actions.png")
     plt.savefig(save_path)
     plt.close(fig)
 
