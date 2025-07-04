@@ -1,0 +1,16 @@
+import subprocess
+import time
+
+cmd = "./scripts/train_dexvla_stage2_follow.sh"
+
+while True:
+    print(f"\n🚀 启动脚本：{cmd}")
+    process = subprocess.Popen(cmd, shell=True)
+    retcode = process.wait()  # 等脚本运行结束（无论成功或失败）
+
+    if retcode == 0:
+        print("✅ 脚本正常退出，任务完成。")
+        break
+    else:
+        print(f"❌ 脚本异常退出（code={retcode}），5 秒后重新启动...")
+        time.sleep(5)
