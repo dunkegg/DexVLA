@@ -59,7 +59,7 @@ def make_simple_cfg(settings):
     sim_cfg.scene_id = settings["scene"]
     #print(dir(sim_cfg))
     sim_cfg.load_semantic_mesh = False  # 禁用语义网格加载
-    sim_cfg.enable_physics = True 
+    sim_cfg.enable_physics = False 
     # agent 半径
     agent_radius = 0.4
     # 初始化 sensor_specs 为一个空列表
@@ -70,7 +70,7 @@ def make_simple_cfg(settings):
     
     agent_cfgs = []
     for index in settings["default_agent"]:
-        agent_cfg = habitat_sim.agent.AgentConfiguration()
+        agent_cfg = habitat_sim.AgentConfiguration()
         agent_cfg.radius = agent_radius  # 设置 agent 的碰撞半径
         agent_cfg.height = 1.5  # 设置 agent 的高度
         #print("index", index)
@@ -98,32 +98,32 @@ def make_simple_cfg(settings):
             rgb_sensor_spec.hfov = settings["hfov"]
             sensor_specs.append(rgb_sensor_spec)
             
-            # 深度传感器配置
-            depth_sensor_spec = habitat_sim.CameraSensorSpec()
-            depth_sensor_spec.uuid = f"depth_{index}_{i}"  # 每个传感器的唯一ID
-            depth_sensor_spec.sensor_type = habitat_sim.SensorType.DEPTH
-            depth_sensor_spec.resolution = [settings["height"], settings["width"]]
-            depth_sensor_spec.position = [
-                radius * math.cos(angle),  # x坐标
-                settings["sensor_height"],  # y坐标（高度）
-                - radius * math.sin(angle)   # z坐标
-            ]
-            depth_sensor_spec.orientation = euler_angles  # 设置欧拉角
-            depth_sensor_spec.hfov = settings["hfov"]
-            sensor_specs.append(depth_sensor_spec)
+            # # 深度传感器配置
+            # depth_sensor_spec = habitat_sim.CameraSensorSpec()
+            # depth_sensor_spec.uuid = f"depth_{index}_{i}"  # 每个传感器的唯一ID
+            # depth_sensor_spec.sensor_type = habitat_sim.SensorType.DEPTH
+            # depth_sensor_spec.resolution = [settings["height"], settings["width"]]
+            # depth_sensor_spec.position = [
+            #     radius * math.cos(angle),  # x坐标
+            #     settings["sensor_height"],  # y坐标（高度）
+            #     - radius * math.sin(angle)   # z坐标
+            # ]
+            # depth_sensor_spec.orientation = euler_angles  # 设置欧拉角
+            # depth_sensor_spec.hfov = settings["hfov"]
+            # sensor_specs.append(depth_sensor_spec)
 
         agent_cfg.sensor_specifications = sensor_specs
-        agent_cfg.action_space = {
-            "move_forward": habitat_sim.agent.ActionSpec(
-                "move_forward", habitat_sim.agent.ActuationSpec(amount=0.25)
-            ),
-            "turn_left": habitat_sim.agent.ActionSpec(
-                "turn_left", habitat_sim.agent.ActuationSpec(amount=10.0)
-            ),
-            "turn_right": habitat_sim.agent.ActionSpec(
-                "turn_right", habitat_sim.agent.ActuationSpec(amount=10.0)
-            ),
-        }
+        # agent_cfg.action_space = {
+        #     "move_forward": habitat_sim.agent.ActionSpec(
+        #         "move_forward", habitat_sim.agent.ActuationSpec(amount=0.25)
+        #     ),
+        #     "turn_left": habitat_sim.agent.ActionSpec(
+        #         "turn_left", habitat_sim.agent.ActuationSpec(amount=10.0)
+        #     ),
+        #     "turn_right": habitat_sim.agent.ActionSpec(
+        #         "turn_right", habitat_sim.agent.ActuationSpec(amount=10.0)
+        #     ),
+        # }
         agent_cfgs.append(agent_cfg)
         
     return habitat_sim.Configuration(sim_cfg, agent_cfgs)

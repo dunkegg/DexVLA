@@ -158,8 +158,8 @@ loglog/
 unpacked_images/
 z_images/
 plot_in_train/
-evaluate/plot_action/
-evaluate/plot_action2/
+evaluate/plot_action*
+
 a_plot_analysis/
 habitat_for_sim/habitat-lab/
 habitat_for_sim/habitat-smi/

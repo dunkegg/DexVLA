@@ -5,7 +5,7 @@ matplotlib.use('Agg')
 import os
 import numpy as np
 import cv2
-
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 # 创建保存文件夹
 output_dir = "evaluate/plot_action"
 os.makedirs(output_dir, exist_ok=True)
@@ -102,7 +102,7 @@ def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, fr
     print(f"✅ Saved: {save_path}")
 
 
-def plot_obs(time,predicted_actions, post_process, raw_lang, obs,human_position):
+def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
     # for idx, img in enumerate(frames):
     #     out_path = os.path.join(output_dir, f"case_{i}_frame_{idx:04d}.png")  # 命名格式: frame_0000.png
     #     cv2.imwrite(out_path, img)
@@ -129,10 +129,11 @@ def plot_obs(time,predicted_actions, post_process, raw_lang, obs,human_position)
 
     # === 创建大图 ===
     fig = plt.figure(figsize=(12, 6))
-    
+    canvas = FigureCanvas(fig) 
     # 左侧：obs 图像
     ax_img = fig.add_subplot(1, 2, 1)
-    ax_img.imshow(cv2.cvtColor(obs['color_0_0'], cv2.COLOR_BGR2RGB))
+    # ax_img.imshow(cv2.cvtColor(obs['color_0_0'], cv2.COLOR_BGR2RGB))
+    ax_img.imshow(cv2.cvtColor(obs, cv2.COLOR_BGR2RGB))
     ax_img.set_title('Observation')
     ax_img.axis('off')
 
@@ -169,9 +170,15 @@ def plot_obs(time,predicted_actions, post_process, raw_lang, obs,human_position)
     # ===== Save figure =====
     plt.tight_layout()
     
-    out_path = os.path.join(output_dir, f"{time}.png")  # 命名格式: frame_0000.png
-    # cv2.imwrite(out_path, obs)
-    plt.savefig(out_path)
+    # out_path = os.path.join(output_dir, f"{time}.png")  # 命名格式: frame_0000.png
+    # # cv2.imwrite(out_path, obs)
+    # plt.savefig(out_path)
+    # plt.close(fig)
+
+    # print(f"✅ Saved: {out_path}")
+    canvas.draw()
+    buf = canvas.buffer_rgba()
+    img_np = np.asarray(buf)[:, :, :3]  # 去掉 alpha 通道（RGB）
     plt.close(fig)
 
-    print(f"✅ Saved: {out_path}")
+    return img_np  # 返回 numpy 格式图像

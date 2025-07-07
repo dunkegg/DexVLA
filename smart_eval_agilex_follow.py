@@ -1,14 +1,15 @@
 import sys
 import os
-
-# from qwen2_vla.model_load_utils import load_model_for_eval
+os.environ["HABITAT_SIM_EGL"] = "1"
+os.environ["HABITAT_SIM_GPU_DEVICE_ID"] = "0"
+from qwen2_vla.model_load_utils import load_model_for_eval
 from torchvision import transforms
 import pickle
 import time
 from data_utils.utils import set_seed
 import random
-# from policy_heads import * 
-# from qwen2_vla.utils.image_processing_qwen2_vla import *  
+from policy_heads import * 
+from qwen2_vla.utils.image_processing_qwen2_vla import *  
 import torch
 import numpy as np
 import h5py
@@ -18,12 +19,13 @@ from collections import deque
 import magnum as mn
 from tqdm import tqdm
 import habitat_sim
+print(habitat_sim.__file__)
 from habitat_for_sim.sim.habitat_utils import local2world_position_yaw, to_vec3, to_quat, shortest_angle_diff, load_humanoid
 from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 from habitat_for_sim.utils.goat import read_yaml, extract_dict_from_folder, get_current_scene, process_episodes_and_goals, convert_to_scene_objects, find_scene_path, calculate_euclidean_distance
 from habitat_for_sim.agent.path_generator import generate_path
 from habitat_for_sim.utils.frontier_exploration import FrontierExploration
-
+from scipy.spatial.transform import Rotation as R
 # 将上级目录加入 Python 搜索路径
 
 from habitat_for_sim.utils.explore.explore_habitat import (
@@ -498,8 +500,8 @@ if __name__ == '__main__':
 
 
 
-    folder = "/home/wangzejin/habitat/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content" #wzjpath
-    yaml_file_path = "/home/wangzejin/habitat/ON-MLLM/human_follower/cfg/exp.yaml" #wzjpath
+    folder = "/wangzejin/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content" #wzjpath
+    yaml_file_path = "habitat_for_sim/cfg/exp.yaml" #wzjpath
     
     # 初始化目标文件列表
     target_files = []   
@@ -513,17 +515,18 @@ if __name__ == '__main__':
     
     cfg = read_yaml(yaml_file_path)
     cfg.output_dir = os.path.join(cfg.output_parent_dir, cfg.exp_name)
-    cfg.scenes_data_path = "/home/wangzejin/habitat/goat_bench/data/scene_datasets/hm3d/train" #wzjpath
+    cfg.scenes_data_path = "/wangzejin/goat_bench/data/scene_datasets/hm3d/train" #wzjpath
     
-    data = extract_dict_from_folder(folder, target_files)
+    # data = extract_dict_from_folder(folder, target_files)
 
     all_index = 0
-    for file_name, content in data.items():
-        if all_index > 10000:
+    for i in range(10):
+    # for file_name, content in data.items():
+        if all_index > 10:
             break
 
-        structured_data, filtered_episodes = process_episodes_and_goals(content)
-        episodes = convert_to_scene_objects(structured_data, filtered_episodes)
+        # structured_data, filtered_episodes = process_episodes_and_goals(content)
+        # episodes = convert_to_scene_objects(structured_data, filtered_episodes)
         
         # unique_episodes = {}
         # for ep in episodes:
@@ -535,7 +538,7 @@ if __name__ == '__main__':
         # episodes = random.sample(list(unique_episodes.values()), min(5, len(unique_episodes)))
 
         
-        scene = cfg.current_scene = get_current_scene(structured_data)
+        # scene = cfg.current_scene = get_current_scene(structured_data)
         
         
         # Set up scene in Habitat
@@ -543,7 +546,8 @@ if __name__ == '__main__':
             simulator.close()
         except:
             pass
-        scene_mesh_dir = find_scene_path(cfg, cfg.current_scene)
+        # scene_mesh_dir = find_scene_path(cfg, cfg.current_scene)
+        scene_mesh_dir = '/wangzejin/goat_bench/data/scene_datasets/hm3d/train/00529-W9YAR9qcuvN/W9YAR9qcuvN.basis.glb'
         sim_settings = {
             "scene": scene_mesh_dir,
             "default_agent": [0],
@@ -552,11 +556,50 @@ if __name__ == '__main__':
             "height": 480,
             "hfov": 120,
         }
-        sim_cfg = make_simple_cfg(sim_settings)
-        simulator = habitat_sim.Simulator(sim_cfg)
+        origin_sim_cfg = make_simple_cfg(sim_settings)
+
+        sim_cfg = habitat_sim.SimulatorConfiguration()
+        sim_cfg.scene_id = scene_mesh_dir
+        sim_cfg.load_semantic_mesh = False  # 禁用语义网格加载
+        sim_cfg.enable_physics = False 
+        sim_cfg.gpu_device_id = 0
+        agent_cfg = habitat_sim.AgentConfiguration()
+        radius = 0.4
+        agent_cfg.radius = radius  # 设置 agent 的碰撞半径
+        agent_cfg.height = 1.5  # 设置 agent 的高度
+        num_sensors = 1
+        angle = 2 * math.pi * i / num_sensors + math.pi / 2 # 计算每个传感器的角度：等夹角环绕360度
+        #angle = 0 时 为正前方摄像头
+        
+        # RGB传感器配置
+        rgb_sensor_spec = habitat_sim.CameraSensorSpec()
+        rgb_sensor_spec.uuid = f"color_{0}_{0}"  # 每个传感器的唯一ID
+        rgb_sensor_spec.sensor_type = habitat_sim.SensorType.COLOR
+        rgb_sensor_spec.resolution = [sim_settings["height"], sim_settings["width"]]
+
+        # 四元数到欧拉角的转换
+        rotation = quat_from_angle_axis(angle - math.pi / 2, np.array([0, 1, 0]))  # 计算四元数
+        euler_angles = R.from_quat([rotation.x, rotation.y, rotation.z, rotation.w]).as_euler('xyz', degrees=False)  # 转换为欧拉角
+        
+        rgb_sensor_spec.position = [
+            radius * math.cos(angle),  # x坐标
+            sim_settings["sensor_height"],  # y坐标（高度）
+            - radius * math.sin(angle)  # z坐标
+        ]
+        #print(f"position of sensor {i}:", rgb_sensor_spec.position)
+        rgb_sensor_spec.orientation = euler_angles  # 设置欧拉角
+        rgb_sensor_spec.hfov = sim_settings["hfov"]
+        sensor_specs = []
+        sensor_specs.append(rgb_sensor_spec)
+        agent_cfg.sensor_specifications = sensor_specs
+
+        all_cfg = habitat_sim.Configuration(sim_cfg, [agent_cfg])
+        simulator = habitat_sim.Simulator(all_cfg)
+
+        # simulator = habitat_sim.Simulator(origin_sim_cfg)
         agilex_bot.reset(simulator.agents[0])
         # 从 sim_cfg 中获取 agent 配置
-        agent_cfg = sim_cfg.agents[0]  # 获取默认代理的配置
+        agent_cfg = all_cfg.agents[0]  # 获取默认代理的配置
         # 获取 NavMeshSettings 对象
         navmesh_settings = habitat_sim.NavMeshSettings()
         navmesh_settings.agent_radius = agent_cfg.radius             # 设置 agent 碰撞半径
