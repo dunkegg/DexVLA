@@ -162,7 +162,7 @@ evaluate/plot_action*
 
 a_plot_analysis/
 habitat_for_sim/habitat-lab/
-habitat_for_sim/habitat-smi/
+habitat_for_sim/habitat-sim/
 # Pyre type checker
 .pyre/
 
