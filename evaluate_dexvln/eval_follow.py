@@ -138,47 +138,47 @@ def eval_bc(i,policy, target,deploy_env, policy_config, raw_lang=None, query_fre
 
 
 
-        image_list = []  # for visualization
+    image_list = []  # for visualization
 
-        with torch.inference_mode():
+    with torch.inference_mode():
 
-            obs,states = deploy_env.get_obs()
+        obs,states = deploy_env.get_obs()
 
-            ### 5. Realize the function of get_obs###################
-            traj_rgb_np, robot_state = process_obs(obs, states, stats)
-            #########################################################
-            image_list.append(traj_rgb_np)
-            robot_state = torch.from_numpy(robot_state).float().cuda()
+        ### 5. Realize the function of get_obs###################
+        traj_rgb_np, robot_state = process_obs(obs, states, stats)
+        #########################################################
+        image_list.append(traj_rgb_np)
+        robot_state = torch.from_numpy(robot_state).float().cuda()
 
-                ### 6. Augment the images##############################################################################################
-            curr_image = torch.from_numpy(traj_rgb_np).float().cuda()
-            if rand_crop_resize:
-                print('rand crop resize is used!')
-                original_size = curr_image.shape[-2:]
-                ratio = 0.95
-                curr_image = curr_image[...,
-                                int(original_size[0] * (1 - ratio) / 2): int(original_size[0] * (1 + ratio) / 2),
-                                int(original_size[1] * (1 - ratio) / 2): int(original_size[1] * (1 + ratio) / 2)]
-                curr_image = curr_image.squeeze(0)
-                resize_transform = transforms.Resize(original_size, antialias=True)
-                curr_image = resize_transform(curr_image)
-                curr_image = curr_image.unsqueeze(0)
-            #######################################################################################################################
+            ### 6. Augment the images##############################################################################################
+        curr_image = torch.from_numpy(traj_rgb_np).float().cuda()
+        if rand_crop_resize:
+            print('rand crop resize is used!')
+            original_size = curr_image.shape[-2:]
+            ratio = 0.95
+            curr_image = curr_image[...,
+                            int(original_size[0] * (1 - ratio) / 2): int(original_size[0] * (1 + ratio) / 2),
+                            int(original_size[1] * (1 - ratio) / 2): int(original_size[1] * (1 + ratio) / 2)]
+            curr_image = curr_image.squeeze(0)
+            resize_transform = transforms.Resize(original_size, antialias=True)
+            curr_image = resize_transform(curr_image)
+            curr_image = curr_image.unsqueeze(0)
+        #######################################################################################################################
 
-            ###7. Process inputs and predict actions############################################################################################
-            batch = policy.process_batch_to_qwen2_vla(curr_image, robot_state, raw_lang)
-            if policy_config['tinyvla']:
-                all_actions, outputs = policy.policy.evaluate_tinyvla(**batch, is_eval=True, tokenizer=policy.tokenizer)
-            else:
-                # from inspect import signature
-                # print(signature(policy.policy.generate))
-                all_actions, outputs = policy.policy.evaluate(**batch, is_eval=True, tokenizer=policy.tokenizer)
+        ###7. Process inputs and predict actions############################################################################################
+        batch = policy.process_batch_to_qwen2_vla(curr_image, robot_state, raw_lang)
+        if policy_config['tinyvla']:
+            all_actions, outputs = policy.policy.evaluate_tinyvla(**batch, is_eval=True, tokenizer=policy.tokenizer)
+        else:
+            # from inspect import signature
+            # print(signature(policy.policy.generate))
+            all_actions, outputs = policy.policy.evaluate(**batch, is_eval=True, tokenizer=policy.tokenizer)
 
-                all_actions = all_actions.squeeze(0)  #
-                all_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
-                all_actions = np.array([post_process(raw_action) for raw_action in all_actions])
-            result = plot_obs(i, all_actions,raw_lang, obs['top'][-1], target)
-            return result
+            all_actions = all_actions.squeeze(0)  #
+            all_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
+            all_actions = np.array([post_process(raw_action) for raw_action in all_actions])
+        result = plot_obs(i, all_actions,raw_lang, obs['top'][-1], target)
+        return result
 
 
 
@@ -261,7 +261,7 @@ if __name__ == '__main__':
     query_frequency = 30
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/qwen2_follow_20000/checkpoint-20000",
+        "model_path": "OUTPUT/qwen2_follow_rr/checkpoint-20000",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune
@@ -290,7 +290,7 @@ if __name__ == '__main__':
 
     folder_path = 'test_data/follow3'
     test_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
-    output_root = "test_data/visulization"
+    output_root = "test_data/visulization_rr"
     os.makedirs(output_root, exist_ok=True)
     for i, file_path in enumerate(test_files):
         # def print_hdf5_structure(file_path):
@@ -317,7 +317,9 @@ if __name__ == '__main__':
             frames = get_history_frames(frames_paths, ep_data["obs_idx"]-1, n_frames)
             compressed = False
             images = []
+            rank = 0
             for img_path in frames:
+                img_path = img_path.replace("frames/", f"frames_{rank}/")
                 img = cv2.imread(img_path)
                 if compressed:
                     img = cv2.imdecode(img, 1)
