@@ -18,6 +18,7 @@ class ScaleDPPolicyConfig(PretrainedConfig):
     model_type = "scale_dp_policy"
     def __init__(
             self,
+            loss_type: str = None,  # one of: None, "time_weighted_mse", "traj_distance_weighted_mse"
             eval: bool = False,
             action_dim: int = 14,  # action dim
             # output_dim: int = 14,  # action dim
@@ -38,6 +39,7 @@ class ScaleDPPolicyConfig(PretrainedConfig):
             num_train_timesteps: int = 50,
             is_tinyvla: bool = False,
             **kwargs
+            
     ):
         if model_size != "none":
             depth = MODEL_STRUCTURE[model_size]['depth']
@@ -46,7 +48,7 @@ class ScaleDPPolicyConfig(PretrainedConfig):
         else:
             raise ValueError("model_size should not be 'none'")
         self.eval = eval
-
+        self.loss_type = loss_type
         self.input_dim = action_dim
         self.output_dim = action_dim
         self.prediction_horizon = prediction_horizon

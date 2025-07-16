@@ -25,6 +25,7 @@ deepspeed --master_port 29604 --include=localhost:0,1,2,3 ./train_vla.py \
   --flash_attn True \
   --chunk_size 30 \
   --load_pretrain_dit False \
+  --loss_type None \
   --policy_head_type $ACTION_HEAD \
   --policy_head_size "ScaleDP_H" \
   --image_size_stable "(320,240)" \
