@@ -22,7 +22,7 @@ from torch.jit import Final
 from timm.models.vision_transformer import Mlp, use_fused_attn
 from transformers.modeling_utils import PreTrainedModel
 from transformers import AutoModel, AutoModelForCausalLM
-
+import mse_weights
 _logger = logging.getLogger(__name__)
 
 
@@ -202,6 +202,7 @@ class ScaleDP(PreTrainedModel):
     ):
         super().__init__(config)
         self.train_steps = 0
+        self.loss_type = getattr(config,"loss_type", None)
         # compute number of tokens for main trunk and conScaleDPion encoder
         if config.n_obs_steps is None:
             config.n_obs_steps = config.prediction_horizon
@@ -415,10 +416,25 @@ class ScaleDP(PreTrainedModel):
 
             noise_pred = self.model_forward(noisy_actions, timesteps, global_cond=hidden_states, states=states)
             noise = noise.view(noise.size(0) * noise.size(1), *noise.size()[2:])
-            loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
-            loss = (loss * ~is_pad.unsqueeze(-1)).mean()
-            # loss_dict['loss'] = loss
-            # return {'loss': loss}
+            if self.loss_type is None:
+                loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
+                loss = (loss * ~is_pad.unsqueeze(-1)).mean()
+            elif self.loss_type == "time_weighted_mse":
+                loss = mse_weights.time_weighted_mse(
+                    noise_pred=noise_pred,
+                    noise=noise,
+                    is_pad=is_pad,
+                    weight_type="exp"
+                )
+            elif self.loss_type == "traj_distance_weighted_mse":
+                loss = mse_weights.traj_distance_weighted_mse(
+                    noise_pred=noise_pred,
+                    noise=noise,
+                    gt_positions=actions,
+                    pred_positions=actions,
+                    gamma=0.9,
+                )
+
             output = {'loss': loss}
             output["reconstructed_action"] = None
             output["noise_pred"] = noise_pred

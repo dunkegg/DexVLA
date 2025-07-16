@@ -37,6 +37,7 @@ class ScaleDPPolicyConfig(PretrainedConfig):
             noise_samples: int = 1,
             num_train_timesteps: int = 50,
             is_tinyvla: bool = False,
+            loss_type: str = None,  # one of: None, "time_weighted_mse", "traj_distance_weighted_mse"c
             **kwargs
     ):
         if model_size != "none":
@@ -69,6 +70,8 @@ class ScaleDPPolicyConfig(PretrainedConfig):
         self.num_queries = prediction_horizon
         self.noise_samples = noise_samples
         self.num_train_timesteps = num_train_timesteps
+        self.loss_type = loss_type
+
         super().__init__(**kwargs)
 
     @classmethod
