@@ -274,14 +274,115 @@ def generate_interfer_path(interfering_humanoids, human_path, time_step=1/10, sp
         )
         interferer.reset_path(path)
 
+def sample_data(sim, human_path,goal_pos,time_step, humanoid_agent, observations, output, follow_timestep,follow_state):
+    keep_distance = 0.7
+    sample_list = [random.uniform(1, 1.5), random.uniform(1.5, 2),random.uniform(2, 2.5),random.uniform(2.5, 3.5), random.uniform(3, 3.5),random.uniform(3.5, 4)]
+    long_follow_range = random.uniform(4, 5)
+    # ▶ 记录轨迹与观察
+    shortest_path = habitat_sim.ShortestPath()
+    if move_dis > long_follow_range:
+        shortest_path.requested_start = follow_state.position
+        shortest_path.requested_end = goal_pos
+        if sim.pathfinder.find_path(shortest_path) and follow_timestep< time_step:
+            move_dis = 0
+            long_follow_range = random.uniform(3, 5)
+            sample_list = []
+
+            # new_path = generate_path(shortest_path.points, sim.pathfinder, filt_distance=keep_distance, visualize=False)
+            # for j in range(len(new_path)):
+            #     follow_state.position = new_path[j][0]
+            #     follow_state.rotation = to_quat(new_path[j][1])
+            #     follow_yaw = new_path[j][2]
+            #     sim.agents[0].set_state(follow_state)
+            #     obs = sim.get_sensor_observations(0)
+            #     observations.append(obs.copy())
+            #     follow_data = {
+            #         "obs_idx": len(observations) - 1,
+            #         "follow_state": new_path[j],
+            #         "human_state": human_path[time_step],
+            #         "path": new_path[j:],
+            #         "type": 0,
+            #     }
+            #     output["follow_paths"].append(follow_data)
+            
+            cur_follow_timestep = follow_timestep
+            for t in range(cur_follow_timestep, time_step):
+                follow_state.position = human_path[t][0]
+                follow_state.rotation = to_quat(human_path[t][1])
+                follow_yaw = human_path[t][2]
+                sim.agents[0].set_state(follow_state)
+                if t%5 ==0:
+                    observations.append(sim.get_sensor_observations(0).copy())
+                    follow_data = {
+                        "obs_idx": len(observations) - 1,
+                        "follow_state": human_path[follow_timestep],
+                        "human_state": human_path[time_step],
+                        "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
+                        "desc": humanoid_agent.get_desc(),
+                        "type": 0,
+                    }
+                    output["follow_paths"].append(follow_data)
+                follow_timestep+=1
+
+    elif len(sample_list) > 0 and move_dis > sample_list[0]:
+        shortest_path.requested_start = follow_state.position
+        shortest_path.requested_end = goal_pos
+        if sim.pathfinder.find_path(shortest_path):
+            del sample_list[0]
+            # new_path = generate_path(shortest_path.points, sim.pathfinder, filt_distance=keep_distance, visualize=False)
+            # follow_data = {
+            #     "obs_idx": len(observations) - 1,
+            #     "follow_state": (follow_state.position, follow_state.rotation, follow_yaw),
+            #     "human_state": human_path[time_step],
+            #     "path": new_path,
+            #     "type": 1,
+            # }
+            # output["follow_paths"].append(follow_data)
+
+            observations.append(sim.get_sensor_observations(0).copy())
+            follow_data = {
+                "obs_idx": len(observations) - 1,
+                "follow_state": human_path[follow_timestep],
+                "human_state": human_path[time_step],
+                "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
+                "desc": humanoid_agent.get_desc(),
+                "type": 1,
+            }
+            output["follow_paths"].append(follow_data)
+    elif move_dis < 3 and follow_timestep%3==0:
+        shortest_path.requested_start = follow_state.position
+        shortest_path.requested_end = goal_pos
+        if sim.pathfinder.find_path(shortest_path) and follow_timestep< time_step-1:
+            follow_timestep+=1
+            follow_state.position = human_path[follow_timestep][0]
+            follow_state.rotation = to_quat(human_path[follow_timestep][1])
+            follow_yaw = human_path[follow_timestep][2]
+            sim.agents[0].set_state(follow_state)
+
+            observations.append(sim.get_sensor_observations(0).copy())           
+            follow_data = {
+                "obs_idx": len(observations) - 1,
+                "follow_state": human_path[follow_timestep],
+                "human_state": human_path[time_step],
+                "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
+                "desc": humanoid_agent.get_desc(),
+                "type": 2,
+            }
+            
+            output["follow_paths"].append(follow_data)
+    
+    return output, observations, follow_timestep, follow_state
+
 def walk_along_path_multi(
     all_index,
     sim,
     humanoid_agent,  # AgentHumanoid 实例
     human_path,
     fps=10,
+    timestep_gap = 0.2,
     forward_speed=0.7,
     interfering_humanoids=None,
+    robot = None,
 ):
     output = {"obs": [], "follow_paths": []}
     
@@ -296,17 +397,6 @@ def walk_along_path_multi(
     sim.step_physics(1.0 / fps)
 
     follow_state = sim.agents[0].get_state()
-
-
-    # obs_quat = quat_from_angle_axis(human_path[5][2]+math.pi, np.array([0, 1, 0]))
-    # follow_state.position = human_path[5][0]
-    # follow_state.rotation = obs_quat
-    # sim.agents[0].set_state(follow_state)
-    # obs = sim.get_sensor_observations(0)
-    # observations.append(obs.copy())
-    # observations.append(obs.copy())
-
-
     follow_yaw = human_path[0][2]
     follow_state.position = human_path[0][0]
     follow_state.rotation = to_quat(human_path[0][1])
@@ -316,10 +406,11 @@ def walk_along_path_multi(
     follow_timestep = 0
 
     move_dis = 0
-    sample_list = [random.uniform(1, 1.5), random.uniform(1.5, 2),random.uniform(2, 2.5),random.uniform(2.5, 3.5), random.uniform(3, 3.5),random.uniform(3.5, 4)]
-    long_follow_range = random.uniform(4, 5)
+
     
-    
+    last_sample_time = 0
+    last_plan_time = 0
+    last_step_time = 0
     for time_step in range(2, len(human_path)):
         goal_pos, goal_quat, goal_yaw = human_path[time_step]
 
@@ -359,99 +450,26 @@ def walk_along_path_multi(
 
         # 更新物理引擎
         sim.step_physics(1.0 / fps)
-        
-        # ▶ 记录轨迹与观察
-        shortest_path = habitat_sim.ShortestPath()
-        if move_dis > long_follow_range:
-            shortest_path.requested_start = follow_state.position
-            shortest_path.requested_end = goal_pos
-            if sim.pathfinder.find_path(shortest_path) and follow_timestep< time_step:
-                move_dis = 0
-                long_follow_range = random.uniform(3, 5)
-                sample_list = []
-
-                # new_path = generate_path(shortest_path.points, sim.pathfinder, filt_distance=keep_distance, visualize=False)
-                # for j in range(len(new_path)):
-                #     follow_state.position = new_path[j][0]
-                #     follow_state.rotation = to_quat(new_path[j][1])
-                #     follow_yaw = new_path[j][2]
-                #     sim.agents[0].set_state(follow_state)
-                #     obs = sim.get_sensor_observations(0)
-                #     observations.append(obs.copy())
-                #     follow_data = {
-                #         "obs_idx": len(observations) - 1,
-                #         "follow_state": new_path[j],
-                #         "human_state": human_path[time_step],
-                #         "path": new_path[j:],
-                #         "type": 0,
-                #     }
-                #     output["follow_paths"].append(follow_data)
-                
-                cur_follow_timestep = follow_timestep
-                for t in range(cur_follow_timestep, time_step):
-                    follow_state.position = human_path[t][0]
-                    follow_state.rotation = to_quat(human_path[t][1])
-                    follow_yaw = human_path[t][2]
-                    sim.agents[0].set_state(follow_state)
-                    if t%5 ==0:
-                        observations.append(sim.get_sensor_observations(0).copy())
-                        follow_data = {
-                            "obs_idx": len(observations) - 1,
-                            "follow_state": human_path[follow_timestep],
-                            "human_state": human_path[time_step],
-                            "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
-                            "desc": humanoid_agent.get_desc(),
-                            "type": 0,
-                        }
-                        output["follow_paths"].append(follow_data)
-                    follow_timestep+=1
-
-        elif len(sample_list) > 0 and move_dis > sample_list[0]:
-            shortest_path.requested_start = follow_state.position
-            shortest_path.requested_end = goal_pos
-            if sim.pathfinder.find_path(shortest_path):
-                del sample_list[0]
-                # new_path = generate_path(shortest_path.points, sim.pathfinder, filt_distance=keep_distance, visualize=False)
-                # follow_data = {
-                #     "obs_idx": len(observations) - 1,
-                #     "follow_state": (follow_state.position, follow_state.rotation, follow_yaw),
-                #     "human_state": human_path[time_step],
-                #     "path": new_path,
-                #     "type": 1,
-                # }
-                # output["follow_paths"].append(follow_data)
-
-                observations.append(sim.get_sensor_observations(0).copy())
-                follow_data = {
-                    "obs_idx": len(observations) - 1,
-                    "follow_state": human_path[follow_timestep],
-                    "human_state": human_path[time_step],
-                    "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
-                    "desc": humanoid_agent.get_desc(),
-                    "type": 1,
-                }
-                output["follow_paths"].append(follow_data)
-        elif move_dis < 3 and follow_timestep%3==0:
-            shortest_path.requested_start = follow_state.position
-            shortest_path.requested_end = goal_pos
-            if sim.pathfinder.find_path(shortest_path) and follow_timestep< time_step-1:
-                follow_timestep+=1
-                follow_state.position = human_path[follow_timestep][0]
-                follow_state.rotation = to_quat(human_path[follow_timestep][1])
-                follow_yaw = human_path[follow_timestep][2]
-                sim.agents[0].set_state(follow_state)
-
-                observations.append(sim.get_sensor_observations(0).copy())           
-                follow_data = {
-                    "obs_idx": len(observations) - 1,
-                    "follow_state": human_path[follow_timestep],
-                    "human_state": human_path[time_step],
-                    "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
-                    "desc": humanoid_agent.get_desc(),
-                    "type": 2,
-                }
-                
-                output["follow_paths"].append(follow_data)
+        if robot is None:
+            output, observations, follow_timestep, follow_state = sample_data(sim=sim, human_path = human_path,
+                                                                            goal_pos = goal_pos, time_step = time_step, humanoid_agent = humanoid_agent, 
+                                                                            observations = observations, output = output, follow_timestep = follow_timestep,follow_state = follow_state)
+        else:
+            now = timestep_gap * time_step
+            sample_fps = 2
+            plan_fps = 1
+            step_fps = 5
+            if now - last_sample_time >= 1/sample_fps:
+                last_sample_time = now
+                obs = sim.get_sensor_observations(0)
+                robot.set_obs(obs)
+            if now - last_plan_time >= 1/plan_fps:
+                robot.eval_bc()
+                robot.save_obs(now, humanoid_agent.base_pos)
+            if now - last_step_time >= 1/step_fps:
+                robot.step(now)
+            
+            
 
     output["obs"] = observations
     if all_index < 10:
