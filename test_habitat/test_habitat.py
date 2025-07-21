@@ -1,9 +1,10 @@
 import habitat_sim
 import magnum as mn
+import imageio
 sim_cfg = habitat_sim.SimulatorConfiguration()
-sim_cfg.scene_id = "/wangzejin/goat_bench/data/scene_datasets/hm3d/train/00529-W9YAR9qcuvN/W9YAR9qcuvN.basis.glb"
+sim_cfg.scene_id = "/mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train/00529-W9YAR9qcuvN/W9YAR9qcuvN.basis.glb"
 sim_cfg.gpu_device_id = 0
-sim_cfg.enable_physics = False
+sim_cfg.enable_physics = True
 
 agent_cfg = habitat_sim.AgentConfiguration()
 
@@ -17,6 +18,11 @@ sensor.position =  mn.Vector3(0.0, 1.5, 0.0)
 agent_cfg.sensor_specifications = [sensor]
 
 sim = habitat_sim.Simulator(habitat_sim.Configuration(sim_cfg, [agent_cfg]))
+obs = sim.get_sensor_observations(0)
+imageio.imwrite("output_rgb.png", obs['color'])
+print("✅ 成功渲染图像并保存至 output_rgb.png")
+
+sim.close()
 print("✅ Simulator init success")
 
 # import habitat_sim
