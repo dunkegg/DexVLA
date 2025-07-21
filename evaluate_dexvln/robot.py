@@ -51,6 +51,7 @@ class FakeRobotEnv():
         self.stats = None
         self.agent = None
         self.local_actions = None
+        self.world_actions = None
 
         self.set_policy(policy, policy_config)
         
@@ -69,7 +70,8 @@ class FakeRobotEnv():
         self.height = self.state.position[1]
         self.qpos = np.array([0, 0, 0])
         self.n_frames = n_frames
-        
+        self.world_actions = []
+        self.local_actions = []
         
 
         raw_lang ="follow the human"
@@ -116,8 +118,8 @@ class FakeRobotEnv():
         human_position = human_position - self.agent.get_state().position
         human_position[0] = human_position[0]
         human_position[2] = -human_position[2]
-        img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,human_position)
-        imageio.imwrite(f'eval_plot/{time}.png', img_np)
+        img_np = plot_obs(time, self.world_actions, "follow the human", cur_image,human_position)
+        imageio.imwrite(f'eval_plot/{round(time, 1)}.png', img_np)
 
 
     # def set_info(self,actions,raw_lang):
@@ -240,6 +242,7 @@ class FakeRobotEnv():
             local_actions = np.insert(local_actions, 1, 0, axis=1)
 
             world_actions = local2world_position_yaw(local_actions, self.qpos, np.array([cur_position[0], cur_position[1], cur_position[2]]), cur_yaw)
+            self.world_actions = world_actions
             habitat_actions = []
             for i in range(len(world_actions)):
                 pos = to_vec3([world_actions[i][0],world_actions[i][1],world_actions[i][2]])

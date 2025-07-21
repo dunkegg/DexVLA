@@ -161,6 +161,7 @@ plot_in_train/
 evaluate/plot_action*
 humanoid_data
 a_plot_analysis/
+eval_plot/
 
 # Pyre type checker
 .pyre/
