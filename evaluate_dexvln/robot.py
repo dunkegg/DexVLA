@@ -9,6 +9,7 @@ import torch
 import numpy as np
 from evaluate.visualize_action import plot_actions, plot_obs
 from collections import deque
+import imageio
 
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
@@ -39,7 +40,7 @@ def process_obs(obs, states, stats):
 
 class FakeRobotEnv():
     """Fake robot environment used for testing model evaluation, please replace this to your real environment."""
-    def __init__(self):
+    def __init__(self, policy_config, policy):
         self.history_obs = None
         self.qpos = None
         self.actions = None
@@ -51,12 +52,13 @@ class FakeRobotEnv():
         self.agent = None
         self.local_actions = None
 
-
+        self.set_policy(policy, policy_config)
+        
 
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
-    def reset(self, agent):
+    def reset(self, agent, n_frames):
         print("Reset to home position.")
         self.agent = agent
         self.history_obs = []
@@ -66,6 +68,7 @@ class FakeRobotEnv():
         self.state = self.agent.get_state()
         self.height = self.state.position[1]
         self.qpos = np.array([0, 0, 0])
+        self.n_frames = n_frames
         
         
 
@@ -85,8 +88,8 @@ class FakeRobotEnv():
         self.history_obs.append(image)
         # self.qpos = qpos
 
-    def get_obs(self, n_frames):
-
+    def get_obs(self):
+        n_frames = self.n_frames
         assert len(self.history_obs)>0
         cur_images = self.history_obs.copy()
 
@@ -113,7 +116,8 @@ class FakeRobotEnv():
         human_position = human_position - self.agent.get_state().position
         human_position[0] = human_position[0]
         human_position[2] = -human_position[2]
-        plot_obs(time, self.local_actions, self.post_process, "follow the human", cur_image,human_position)
+        img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,human_position)
+        imageio.imwrite(f'eval_plot/{time}.png', img_np)
 
 
     # def set_info(self,actions,raw_lang):
@@ -125,7 +129,7 @@ class FakeRobotEnv():
     def set_policy(self,policy,policy_config):
         self.policy = policy
         self.policy_config = policy_config
-        # self.policy.policy.eval()
+        
         ## 4. load data stats(min,max,mean....) and define post_process####################################
         stats_path = os.path.join("/".join(policy_config['model_path'].split('/')[:-1]), f'dataset_stats.pkl')
         with open(stats_path, 'rb') as f:
@@ -159,7 +163,7 @@ class FakeRobotEnv():
         # action_info = self.step(action.tolist())
 
 
-    def eval_bc(self,time_count):
+    def eval_bc(self):
 
         assert self.instruction  is not None, "raw lang is None!!!!!!"
         set_seed(0)
@@ -174,7 +178,7 @@ class FakeRobotEnv():
         # all_actions = torch.tensor(all_actions, dtype=torch.float32)
         # self.local_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
 
-
+        self.policy.policy.eval()
         
         image_list = []  # for visualization
 
@@ -204,14 +208,16 @@ class FakeRobotEnv():
             #######################################################################################################################
 
             ###7. Process inputs and predict actions############################################################################################
-            batch = self.policy.process_batch_to_qwen2_vla(curr_image, robot_state, self.instruction)
+            batch = self.policy.process_batch_to_qwen2_vla(curr_image, robot_state, self.instruction,self.n_frames)
             if self.policy_config['tinyvla']:
                 all_actions, outputs = self.policy.policy.evaluate_tinyvla(**batch, is_eval=True, tokenizer=self.policy.tokenizer)
             else:
                 # from inspect import signature
                 # print(signature(policy.policy.generate))
                 all_actions, outputs = self.policy.policy.evaluate(**batch, is_eval=True, tokenizer=self.policy.tokenizer)
-
+                all_actions = all_actions.squeeze(0)  #
+                all_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
+                all_actions = np.array([self.post_process(raw_action) for raw_action in all_actions])
                 # actions,raw_lang = self.get_info()
                 # plot_actions(i,all_actions[0], actions, raw_lang, self.post_process, frames)
             self.local_actions = all_actions

@@ -197,7 +197,7 @@
         "name": "eval",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/eval_follow.py",
+        "program": "${workspaceFolder}/eval_follow_whabitat.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -205,26 +205,7 @@
           "CUDA_VISIBLE_DEVICES": "0",       
         },
         "args": [],
-        "python": "/wangzejin/dexvla_env/bin/python"  // 你的 conda 环境路径
-      },
-      {
-        "name": "test_habitat",
-        "type": "python", 
-        "request": "launch",
-        "program": "${workspaceFolder}/test_habitat.py",
-        "console": "integratedTerminal",
-        "justMyCode": false,
-        "cwd": "${workspaceFolder}", 
-        "env": {
-          "HABITAT_SIM_HEADLESS": "osmesa",
-          "CUDA_VISIBLE_DEVICES": "0",            // 限制使用第0号 GPU
-          "HABITAT_SIM_EGL": "1",                 // 正确启用 EGL
-          "HABITAT_SIM_GPU_DEVICE_ID": "0",       // 显卡设备 ID
-          "MAGNUM_LOG": "EGL",                    // 打印 EGL 初始化日志（可选调试用）
-          "DISPLAY": ""                              // 输出 EGL 初始化状态（可选）
-        },
-        "args": [],
-        "python": "/wangzejin/habitat_env/bin/python"  // 你的 conda 环境路径
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
     ]
   }

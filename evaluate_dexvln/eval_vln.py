@@ -262,7 +262,7 @@ if __name__ == '__main__':
     query_frequency = 30
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/qwen2_follow_rr/checkpoint-20000",
+        "model_path": "OUTPUT/qwen2_single_follow_distance",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune

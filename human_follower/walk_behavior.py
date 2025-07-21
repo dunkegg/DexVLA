@@ -462,10 +462,11 @@ def walk_along_path_multi(
             if now - last_sample_time >= 1/sample_fps:
                 last_sample_time = now
                 obs = sim.get_sensor_observations(0)
-                robot.set_obs(obs)
+                robot.set_obs(obs['color_0_0'])
             if now - last_plan_time >= 1/plan_fps:
                 robot.eval_bc()
-                robot.save_obs(now, humanoid_agent.base_pos)
+                position,yaw,quat = humanoid_agent.get_pose()
+                robot.save_obs(now, position)
             if now - last_step_time >= 1/step_fps:
                 robot.step(now)
             

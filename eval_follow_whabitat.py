@@ -78,17 +78,20 @@ class qwen2_vla_policy:
         # messages[0]['content'][-1]['text'] = raw_lang
 
         return messages
-    def process_batch_to_qwen2_vla(self, curr_image, robo_state, raw_lang):
+    def process_batch_to_qwen2_vla(self, curr_image, robo_state, raw_lang,n_frames):
 
         if len(curr_image.shape) == 5:  # 1,2,3,270,480
             curr_image = curr_image.squeeze(0)
 
-        messages = self.datastruct_droid2qwen2vla(raw_lang,9)
+        messages = self.datastruct_droid2qwen2vla(raw_lang,n_frames)
         image_data = torch.chunk(curr_image, curr_image.shape[0], dim=0)  # top, left_wrist, right_wrist
         image_list = []
         for i, each in enumerate(image_data):
             ele = {}
             each = Image.fromarray(each.cpu().squeeze(0).permute(1, 2, 0).numpy().astype(np.uint8))
+            if each.mode == 'RGBA':
+                each = each.convert('RGB')  # 去掉 alpha 通道
+
             ele['image'] = each
             ele['resized_height'] = 240
             ele['resized_width'] = 320
@@ -127,7 +130,7 @@ if __name__ == '__main__':
     query_frequency = 16
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/qwen2_follow_20000/checkpoint-10000",
+        "model_path": "OUTPUT/single_follow_distance/checkpoint-10000",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune
@@ -136,7 +139,8 @@ if __name__ == '__main__':
     }
 
     # fake env for debug
-    agilex_bot = FakeRobotEnv()
+    policy = qwen2_vla_policy(policy_config)
+    agilex_bot = FakeRobotEnv(policy_config, policy)
     ######################################
     
 
@@ -182,7 +186,7 @@ if __name__ == '__main__':
             pass
 
         simulator = load_simulator(cfg)
-
+        agilex_bot.reset(simulator.agents[0],n_frames=6)
         semantic_scene = simulator.semantic_scene
         pathfinder = simulator.pathfinder
         pathfinder.seed(cfg.seed)
@@ -206,13 +210,14 @@ if __name__ == '__main__':
         target_humanoid = AgentHumanoid(simulator,base_pos=mn.Vector3(0, 0.083, 0), base_yaw = 0,name = humanoid_name,description = description, is_target=True)
         
         all_interfering_humanoids = []
-        for idx in range(3):
-            # break
-            # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
-            interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
-            interferer_description = id_dict[humanoid_name]["description"]
-            interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(0, 0.083, 0), base_yaw = 0, name = interferer_name, description = interferer_description, is_target=False)
-            all_interfering_humanoids.append(interferer)
+        if cfg.multi_humanoids:
+            for idx in range(3):
+                # break
+                # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
+                interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
+                interferer_description = id_dict[humanoid_name]["description"]
+                interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(0, 0.083, 0), base_yaw = 0, name = interferer_name, description = interferer_description, is_target=False)
+                all_interfering_humanoids.append(interferer)
 
 
         print("begin")
@@ -228,15 +233,17 @@ if __name__ == '__main__':
                 continue
             
             #
-            k = random.randint(1, 3) 
-            interfering_humanoids = random.sample(all_interfering_humanoids, k)
-            ##
-            for interfering_humanoid in interfering_humanoids:
-                sample_path = generate_interfere_sample_from_target_path(followed_path,pathfinder, 1)
-                list_pos = [[point.x,point.y,point.z] for point in sample_path]
-                interfering_path = generate_path(list_pos, pathfinder, visualize=False)
-                interfering_path = get_path_with_time(interfering_path, time_step=1/human_fps, speed=0.9)
-                interfering_humanoid.reset_path(interfering_path)
+            interfering_humanoids = None
+            if cfg.multi_humanoids:
+                k = random.randint(1, 3) 
+                interfering_humanoids = random.sample(all_interfering_humanoids, k)
+                ##
+                for interfering_humanoid in interfering_humanoids:
+                    sample_path = generate_interfere_sample_from_target_path(followed_path,pathfinder, 1)
+                    list_pos = [[point.x,point.y,point.z] for point in sample_path]
+                    interfering_path = generate_path(list_pos, pathfinder, visualize=False)
+                    interfering_path = get_path_with_time(interfering_path, time_step=1/human_fps, speed=0.9)
+                    interfering_humanoid.reset_path(interfering_path)
                 
 
             output_data = walk_along_path_multi(

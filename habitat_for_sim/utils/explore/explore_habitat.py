@@ -59,7 +59,7 @@ def make_simple_cfg(settings):
     sim_cfg.scene_id = settings["scene"]
     #print(dir(sim_cfg))
     sim_cfg.load_semantic_mesh = False  # 禁用语义网格加载
-    sim_cfg.enable_physics = False 
+    sim_cfg.enable_physics = True 
     # agent 半径
     agent_radius = 0.4
     # 初始化 sensor_specs 为一个空列表

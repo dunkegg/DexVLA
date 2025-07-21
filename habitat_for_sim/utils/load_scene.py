@@ -1,10 +1,10 @@
 import habitat_sim
-from utils.goat import find_scene_path, calculate_euclidean_distance
-from utils.explore.explore_habitat import (
+from habitat_for_sim.utils.goat import find_scene_path, calculate_euclidean_distance
+from habitat_for_sim.utils.explore.explore_habitat import (
     make_simple_cfg,
     pos_habitat_to_normal,
 )
-from agent.path_generator import generate_path
+from habitat_for_sim.agent.path_generator import generate_path
 from human_follower.walk_behavior import get_path_with_time
 import magnum as mn
 
