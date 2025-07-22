@@ -327,9 +327,7 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
             png = frames_dir / f"frame_{i:06d}.png"
             if not png.exists():
                 save_png(obs_ds[i], png)
-            rel_path = f"data/follow_data/frames/{ep_name}/frame_{i:06d}.png"
-            if i ==0:
-                continue
+            rel_path = png.as_posix()
             frame_paths.append(rel_path)
 
         with h5py.File(dst_h5,"w") as fout:

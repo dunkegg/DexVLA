@@ -10,7 +10,7 @@ import numpy as np
 from evaluate.visualize_action import plot_actions, plot_obs
 from collections import deque
 import imageio
-
+from PIL import Image
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
     tmp = (tmp - stats[key + '_mean']) / stats[key + '_std']
@@ -40,7 +40,7 @@ def process_obs(obs, states, stats):
 
 class FakeRobotEnv():
     """Fake robot environment used for testing model evaluation, please replace this to your real environment."""
-    def __init__(self, policy_config, policy):
+    def __init__(self, policy_config, policy, plot_dir = "eval_plot"):
         self.history_obs = None
         self.qpos = None
         self.actions = None
@@ -54,6 +54,8 @@ class FakeRobotEnv():
         self.world_actions = None
 
         self.set_policy(policy, policy_config)
+        self.episode_id = None
+        self.plot_dir = plot_dir
         
 
     # def step(self, action):
@@ -77,6 +79,9 @@ class FakeRobotEnv():
         raw_lang ="follow the human"
         self.instruction = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
 
+    def set_episode_id(self, episode_id):
+        self.episode_id = episode_id
+
     def set_state(self, pos, rot):
         
         self.state.position = pos
@@ -86,8 +91,21 @@ class FakeRobotEnv():
     def get_state(self):
         return self.agent.get_state()
 
-    def set_obs(self,image):
+    def set_obs(self,image,time,save=False):
+        # 如果是 numpy 数组，先转为 PIL.Image
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+
+        # 确保没有 alpha 通道
+        if image.mode == 'RGBA':
+            image_rgb = image.convert('RGB')
+
         self.history_obs.append(image)
+        if save:
+            plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}","sample")
+            os.makedirs(plot_dir, exist_ok=True)
+            imageio.imwrite(f'{plot_dir}/{round(time, 1)}.png', image_rgb)
+            # imageio.imwrite(f'{plot_dir}/{round(time, 1)}_a.png', image)
         # self.qpos = qpos
 
     def get_obs(self):
@@ -118,15 +136,11 @@ class FakeRobotEnv():
         human_position = human_position - self.agent.get_state().position
         human_position[0] = human_position[0]
         human_position[2] = -human_position[2]
-        img_np = plot_obs(time, self.world_actions, "follow the human", cur_image,human_position)
-        imageio.imwrite(f'eval_plot/{round(time, 1)}.png', img_np)
-
-
-    # def set_info(self,actions,raw_lang):
-    #     self.actions = actions
-    #     self.raw_lang = raw_lang
-    # def get_info(self):
-    #     return self.actions, self.raw_lang
+        # img_np = plot_obs(time, self.world_actions, "follow the human", cur_image,human_position)
+        img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,human_position)
+        plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}")
+        os.makedirs(plot_dir, exist_ok=True)
+        imageio.imwrite(f'{plot_dir}/{round(time, 1)}.png', img_np)
 
     def set_policy(self,policy,policy_config):
         self.policy = policy
@@ -145,7 +159,11 @@ class FakeRobotEnv():
     def step(self, t):
         if len(self.action_queue) ==0:
             return
-        habitat_action = self.action_queue.popleft()
+        # habitat_action = self.action_queue.popleft()
+        while len(self.action_queue)>0:
+            habitat_action = self.action_queue.popleft()
+        
+        
         # raw_action = raw_action.squeeze(0).cpu().to(dtype=torch.float32).numpy()
         ### 8. post process actions##########################################################
         # action = self.post_process(raw_action) !!wzj
@@ -235,12 +253,12 @@ class FakeRobotEnv():
             cur_yaw,_ = quat_to_angle_axis(cur_rotation)
             
             local_actions = self.local_actions.copy()
-            local_actions[:,0] = local_actions[:,0]
-            local_actions[:,1] = -local_actions[:,1]
+            # local_actions[:,0] = -local_actions[:,0]
+            # local_actions[:,1] = local_actions[:,1]
             height_dim = np.zeros((local_actions.shape[0], 1))
             # 拼接成 (30, 4)，在 dim=1 方向添加
             local_actions = np.insert(local_actions, 1, 0, axis=1)
-
+            
             world_actions = local2world_position_yaw(local_actions, self.qpos, np.array([cur_position[0], cur_position[1], cur_position[2]]), cur_yaw)
             self.world_actions = world_actions
             habitat_actions = []

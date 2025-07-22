@@ -165,34 +165,7 @@
         ],
         "python": "/root/miniconda3/envs/dexvla2/bin/python"
       },
-      {
-        "name": "follow split_task",
-        "type": "python",
-        "request": "launch",
-        "program": "${workspaceFolder}/split.py",
-        "console": "integratedTerminal",
-        "justMyCode": false,
-        "cwd": "${workspaceFolder}", 
-        "env": {
-        },
-        "args": [
-        ],
-        "python": "/wangzejin/dexvla_env/bin/python"
-      },
-      {
-        "name": "split_task",
-        "type": "python",
-        "request": "launch",
-        "program": "${workspaceFolder}/z_split_task.py",
-        "console": "integratedTerminal",
-        "justMyCode": false,
-        "cwd": "${workspaceFolder}", 
-        "env": {
-        },
-        "args": [
-        ],
-        "python": "/wangzejin/dexvla_env/bin/python"
-      },
+
       {
         "name": "eval",
         "type": "python",
@@ -205,6 +178,41 @@
           "CUDA_VISIBLE_DEVICES": "0",       
         },
         "args": [],
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
+      },
+      {
+        "name": "follow split_task",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/process_data/split_follow.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+        ],
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python" 
+      },
+      {
+        "name": "Process Raw HDF5",
+        "type": "debugpy",
+        "request": "launch",
+
+        // 要执行的脚本
+        "program": "${workspaceFolder}/process_data/process_raw_h5.py",
+
+        // 传递给脚本的 3 个参数
+        "args": [
+        "${workspaceFolder}/data/raw_data/raw_single_follow_data",     // src
+        "${workspaceFolder}/data/frames/single_follow",            // out_dir
+        "${workspaceFolder}/data/proc_data/single_follow",     // dst
+        "--viz", "${workspaceFolder}/results/test/viz",               // ← 加开关
+        "--history", "10"    
+        ],
+
+        // 可选：使用外部终端以便查看 tqdm 进度条
+        "console": "integratedTerminal",
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
     ]

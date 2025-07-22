@@ -153,8 +153,8 @@ def save_selected_keys_as_individual_h5(src_h5_path, dst_dir):
 
             n_frames = 10
             # 调用处理文件的函数
-            # success = process_file(s, new_h5_path, cam_name, n_frames)
-            success = process_file_zarr(s, new_zarr_path, cam_name, n_frames)
+            success = process_file(s, new_h5_path, cam_name, n_frames)
+            # success = process_file_zarr(s, new_zarr_path, cam_name, n_frames)
 
             if success:
                 print(f"Successfully processed {new_h5_path}")
@@ -184,13 +184,13 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
 
 
         print(f"Already has {sum} episodes")
-        if sum > 1000:
-            break
+        # if sum > 1000:
+        #     break
 
 if __name__ == "__main__":
     # 设置源目录和目标目录
-    src_dir = "/wangzejin/code/DexVLA/data/follow_data/proc"  # 当前目录
-    dst_dir = "/wangzejin/code/DexVLA/data/follow_data/train_test_zarr"  # 输出目录
+    src_dir = "data/proc_data/single_follow"  # 当前目录
+    dst_dir = "data/split_data/single_follow"  # 输出目录
     # 设置要保存的key
 
     process_all_hdf5_in_directory(src_dir, dst_dir)

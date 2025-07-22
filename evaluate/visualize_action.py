@@ -6,6 +6,7 @@ import os
 import numpy as np
 import cv2
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from PIL import Image
 # 创建保存文件夹
 output_dir = "evaluate/plot_action"
 os.makedirs(output_dir, exist_ok=True)
@@ -133,6 +134,9 @@ def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
     # 左侧：obs 图像
     ax_img = fig.add_subplot(1, 2, 1)
     # ax_img.imshow(cv2.cvtColor(obs['color_0_0'], cv2.COLOR_BGR2RGB))
+    if isinstance(obs, Image.Image):
+        obs = np.array(obs)  # PIL -> RGB numpy
+        obs = cv2.cvtColor(obs, cv2.COLOR_RGB2BGR)  # 如果后续逻辑假设 BGR
     ax_img.imshow(cv2.cvtColor(obs, cv2.COLOR_BGR2RGB))
     ax_img.set_title('Observation')
     ax_img.axis('off')

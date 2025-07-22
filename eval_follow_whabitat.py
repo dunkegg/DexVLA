@@ -168,6 +168,8 @@ if __name__ == '__main__':
     all_index = 0
     episodes_count = 0
     for file_name, content in data.items():
+        if all_index > 100:
+            break
         if episodes_count > max_episodes:
             break
         
@@ -186,7 +188,7 @@ if __name__ == '__main__':
             pass
 
         simulator = load_simulator(cfg)
-        agilex_bot.reset(simulator.agents[0],n_frames=6)
+        agilex_bot.reset(simulator.agents[0],n_frames=10)
         semantic_scene = simulator.semantic_scene
         pathfinder = simulator.pathfinder
         pathfinder.seed(cfg.seed)
@@ -204,6 +206,7 @@ if __name__ == '__main__':
         # humanoid_name = folders[all_index]
 
         humanoid_name = get_humanoid_id(id_dict, name_exception=None) 
+        humanoid_name = "female_0"
         
         # 原主目标人
         description = id_dict[humanoid_name]["description"]
@@ -222,13 +225,16 @@ if __name__ == '__main__':
 
         print("begin")
         for episode_id, episode_data in enumerate(tqdm(episodes)):
-
+            if all_index > 100:
+                break
+            if episode_id%10 != 0:
+                continue
             if episodes_count > max_episodes:
                 break
 
             human_fps = 5
             human_speed = 0.7
-            followed_path = generate_path_from_scene(episode_data, pathfinder, human_fps, human_speed)
+            followed_path = generate_path_from_scene(episode_data, pathfinder, 10, human_fps, human_speed)
             if followed_path is None:
                 continue
             
@@ -261,10 +267,7 @@ if __name__ == '__main__':
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
             all_index+=1
 
-
-
-
-
             print("done")
+            
 
 

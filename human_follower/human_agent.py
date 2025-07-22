@@ -100,8 +100,8 @@ class AgentHumanoid:
             print(f"移除人形对象时出错：{e}")
 
     def _load_humanoid(self, sim, humanoid_name,motion_path=None):
-        # data_root = "human_follower/habitat_humanoids"
-        data_root = "human_follower/humanoid_data"
+        data_root = "human_follower/habitat_humanoids"
+        # data_root = "human_follower/humanoid_data"
         urdf_path = f"{data_root}/{humanoid_name}/{humanoid_name}.urdf"
         motion_pkl = motion_path or f"{data_root}/{humanoid_name}/{humanoid_name}_motion_data_smplx.pkl"
         agent_cfg = DictConfig({

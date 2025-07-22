@@ -40,7 +40,7 @@ def load_simulator(cfg):
     
     return simulator
 
-def generate_path_from_scene(obj_data, pathfinder, human_fps = 5, human_speed = 0.7):
+def generate_path_from_scene(obj_data, pathfinder,min_distance = 5 ,human_fps = 5, human_speed = 0.7):
     # 设置起始位置和旋转
     start_position = obj_data.start_position
     start_rotation = obj_data.start_rotation
@@ -74,7 +74,7 @@ def generate_path_from_scene(obj_data, pathfinder, human_fps = 5, human_speed = 
             distance = calculate_euclidean_distance(path[i], path[i+1])
             all_distance+=distance
         
-        if all_distance < 5:
+        if all_distance < min_distance:
             print(f"Skipping episode due to short distance: {all_distance}m")
             return None
         
