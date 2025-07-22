@@ -2,7 +2,8 @@ import os
 import pickle
 from torchvision import transforms
 
-from habitat_for_sim.sim.habitat_utils import local2world_position_yaw, to_vec3, to_quat, shortest_angle_diff, load_humanoid
+from habitat_for_sim.sim.habitat_utils import local2world,habitat_quat_to_magnum ,to_vec3, to_quat, shortest_angle_diff, load_humanoid
+from process_data.process_raw_h5 import world2local_target
 from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 from data_utils.utils import set_seed
 import torch
@@ -133,14 +134,16 @@ class FakeRobotEnv():
         cur_image = self.history_obs[-1]
 
         human_position = np.array([human_position.x,human_position.y,human_position.z])
-        human_position = human_position - self.agent.get_state().position
-        human_position[0] = human_position[0]
-        human_position[2] = -human_position[2]
-        # img_np = plot_obs(time, self.world_actions, "follow the human", cur_image,human_position)
-        img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,human_position)
+        local_human_position = world2local_target(human_position - self.agent.get_state().position, habitat_quat_to_magnum(self.agent.get_state().rotation), type=1)
+        # human_position[0] = human_position[0]
+        # human_position[2] = -human_position[2]
+        plot_world = np.concatenate([self.world_actions[:, :1], self.world_actions[:, 2:]], axis=1)
+        world_img_np = plot_obs(time, plot_world, "follow the human", cur_image,human_position)
+        local_img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,local_human_position)
         plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}")
         os.makedirs(plot_dir, exist_ok=True)
-        imageio.imwrite(f'{plot_dir}/{round(time, 1)}.png', img_np)
+        imageio.imwrite(f'{plot_dir}/{round(time, 1)}_local.png', local_img_np)
+        imageio.imwrite(f'{plot_dir}/{round(time, 1)}_world.png', world_img_np)
 
     def set_policy(self,policy,policy_config):
         self.policy = policy
@@ -249,8 +252,8 @@ class FakeRobotEnv():
             #switch
             cur_state = self.get_state()
             cur_position = cur_state.position
-            cur_rotation = cur_state.rotation
-            cur_yaw,_ = quat_to_angle_axis(cur_rotation)
+            cur_quat = cur_state.rotation
+            cur_yaw,_ = quat_to_angle_axis(cur_quat)
             
             local_actions = self.local_actions.copy()
             # local_actions[:,0] = -local_actions[:,0]
@@ -259,7 +262,7 @@ class FakeRobotEnv():
             # 拼接成 (30, 4)，在 dim=1 方向添加
             local_actions = np.insert(local_actions, 1, 0, axis=1)
             
-            world_actions = local2world_position_yaw(local_actions, self.qpos, np.array([cur_position[0], cur_position[1], cur_position[2]]), cur_yaw)
+            world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),cur_yaw, type=1)
             self.world_actions = world_actions
             habitat_actions = []
             for i in range(len(world_actions)):

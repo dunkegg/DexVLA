@@ -122,6 +122,8 @@ def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
 
 
     pred_xy = pred[:, :2] - pred_base
+    human_position[0] = human_position[0] - pred_base[0]
+    human_position[2] = human_position[2] - pred_base[1]
     pred_yaw = pred[:, 2:]
 
     # 组合回原来的形状
