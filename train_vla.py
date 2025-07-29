@@ -5,10 +5,10 @@ import os
 
 import time
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-os.environ['DEVICE'] = "cuda"
-os.environ["WANDB_DISABLED"] = "true"
+# os.environ['DEVICE'] = "cuda"
+# os.environ["WANDB_DISABLED"] = "true"
 
 from data_utils.utils import load_data  # data functions
 from data_utils.utils import set_seed  # helper functions
@@ -29,9 +29,6 @@ import torch
 local_rank = None
 from aloha_scripts.utils import *
 
-import torch.multiprocessing as mp
-mp.set_sharing_strategy("file_system")
-mp.set_start_method('spawn', force=True)
 
 
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
@@ -370,8 +367,12 @@ def main(all_config=None, model_config=None):
 
 
 if __name__ == '__main__':
-    torch.multiprocessing.set_start_method("spawn", force=True)
-    
+    import torch.multiprocessing as mp        
+    # mp.set_sharing_strategy("file_system")
+    mp.set_start_method('fork', force=True)
+    import multiprocessing.util
+    multiprocessing.util.log_to_stderr()
+
     model_args, data_args, training_args, action_head_args, model_config, bnb_model_from_pretrained_args = parse_param()
     config = {
         'model_args':model_args,

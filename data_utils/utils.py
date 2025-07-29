@@ -177,7 +177,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         rank = int(os.environ.get("RANK", 0))
 
         for img_path in history_image_seq[-n_frames:]:
-            img_path = img_path.replace("frames/", f"frames_{rank}/")
+            # img_path = img_path.replace("code/", f"code/train/")
             img = cv2.imread(img_path)
             if compressed:
                 img = cv2.imdecode(img, 1)
@@ -185,7 +185,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
             frames.append(img)
 
         img_path = img_path = image_seq
-        img_path = img_path.replace("frames/", f"frames_{rank}/")
+        # img_path = img_path.replace("code/", f"code/train/")
         img = cv2.imread(img_path)
         img = cv2.resize(img,  eval(self.data_args.image_size_stable))
         frames.append(img)
@@ -282,7 +282,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         rank = int(os.environ.get("RANK", 0))
         for path_bytes in history_image_seq[-n_frames:]:
             img_path = path_bytes.decode('utf-8')
-            img_path = img_path.replace("frames/", f"frames_{rank}/")
+            # img_path = img_path.replace("code/", f"code/train/")
             img = cv2.imread(img_path)
             if compressed:
                 img = cv2.imdecode(img, 1)
@@ -291,7 +291,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         if not self.train_type:
             img_path = image_seq.decode('utf-8')
-            img_path = img_path.replace("frames/", f"frames_{rank}/")
+            # img_path = img_path.replace("code/", f"code/train/")
             img = cv2.imread(img_path)
             img = cv2.resize(img,  eval(self.data_args.image_size_stable))
             frames.append(img)
@@ -716,7 +716,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
     for d in dataset_dir_l:
         rank = int(os.environ.get("RANK", 0))
         print(f"!!!!!!!!!!!!!!!!!!!!!!!   Rank: {rank}, data path {d}")
-        d = d + f"_{rank}"
+        # d = d + f"_{rank}"
         raw_paths = find_all_hdf5(d, skip_mirrored_data, rank0_print=rank0_print)
         if len(raw_paths) == 0:
             rank0_print("#2"*20); rank0_print(d)
@@ -724,7 +724,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
         # ① name_filter
         filtered = [p for p in raw_paths if name_filter(p)]
         # ② valid h5
-        # filtered = filter_valid_hdf5(filtered, rank0_print) !!!!
+        filtered = filter_valid_hdf5(filtered, rank0_print)
         dataset_path_list_list.append(filtered)
 
     # # 打印统计
@@ -767,7 +767,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
     # 3) 后续统计和数据加载逻辑保持不变
     # ------------------------------------------------------------------
     dataset_path_list = [p for sub in dataset_path_list_list for p in sub] #same as flatten_list
-    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/follow_data/norm_stats.json")
+    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/split_data/single_norm_stats.json")
     rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
 
     train_episode_len_l = [[all_episode_len[i] for i in ids] for ids in train_episode_ids_l]

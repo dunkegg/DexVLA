@@ -1,8 +1,6 @@
-import sys
-sys.path.append('/mnt/pfs/3zpd5q/code/DexVLA/policy_heads')
-from models.transformer_diffusion.modeling_scaledp import *
-from models.transformer_diffusion.configuration_scaledp import *
-from models.unet_diffusion.modeling_unet_diffusion import *
-from models.unet_diffusion.configuration_unet_diffusion import *
-from distilbert.distilbert_encoder import *
+from policy_heads.models.transformer_diffusion.modeling_scaledp import *
+from policy_heads.models.transformer_diffusion.configuration_scaledp import *
+from policy_heads.models.unet_diffusion.modeling_unet_diffusion import *
+from policy_heads.models.unet_diffusion.configuration_unet_diffusion import *
+from policy_heads.distilbert.distilbert_encoder import *
 # import
