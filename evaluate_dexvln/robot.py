@@ -1,8 +1,9 @@
 import os
 import pickle
 from torchvision import transforms
-
-from habitat_for_sim.sim.habitat_utils import local2world_position_yaw, to_vec3, to_quat, shortest_angle_diff, load_humanoid
+from habitat_for_sim.agent.path_generator import direction_to_combined_quaternion
+from habitat_for_sim.sim.habitat_utils import local2world,habitat_quat_to_magnum ,to_vec3, to_quat, shortest_angle_diff, load_humanoid
+from process_data.process_raw_h5 import world2local_target
 from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 from data_utils.utils import set_seed
 import torch
@@ -66,7 +67,7 @@ class FakeRobotEnv():
         self.agent = agent
         self.history_obs = []
         self.chunk_size = 30
-        self.query_frequency = 10
+        self.query_frequency = 30
         self.action_queue = deque(maxlen=self.query_frequency)
         self.state = self.agent.get_state()
         self.height = self.state.position[1]
@@ -74,7 +75,10 @@ class FakeRobotEnv():
         self.n_frames = n_frames
         self.world_actions = []
         self.local_actions = []
-        
+        self.step_actions = []
+        self.step_idx = 0
+
+        # self.plot_dir = self.plot_dir + f"{n_frames}"
 
         raw_lang ="follow the human"
         self.instruction = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
@@ -90,6 +94,8 @@ class FakeRobotEnv():
 
     def get_state(self):
         return self.agent.get_state()
+    def get_observations(self):
+        return self.history_obs
 
     def set_obs(self,image,time,save=False):
         # 如果是 numpy 数组，先转为 PIL.Image
@@ -133,14 +139,16 @@ class FakeRobotEnv():
         cur_image = self.history_obs[-1]
 
         human_position = np.array([human_position.x,human_position.y,human_position.z])
-        human_position = human_position - self.agent.get_state().position
-        human_position[0] = human_position[0]
-        human_position[2] = -human_position[2]
-        # img_np = plot_obs(time, self.world_actions, "follow the human", cur_image,human_position)
-        img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,human_position)
+        local_human_position = world2local_target(human_position - self.agent.get_state().position, habitat_quat_to_magnum(self.agent.get_state().rotation), type=1)
+        # human_position[0] = human_position[0]
+        # human_position[2] = -human_position[2]
+        plot_world = np.concatenate([self.world_actions[:, :1], self.world_actions[:, 2:]], axis=1)
+        world_img_np = plot_obs(time, plot_world, "follow the human", cur_image,human_position)
+        local_img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,local_human_position)
         plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}")
         os.makedirs(plot_dir, exist_ok=True)
-        imageio.imwrite(f'{plot_dir}/{round(time, 1)}.png', img_np)
+        imageio.imwrite(f'{plot_dir}/{round(time, 1)}_local.png', local_img_np)
+        # imageio.imwrite(f'{plot_dir}/{round(time, 1)}_world.png', world_img_np)
 
     def set_policy(self,policy,policy_config):
         self.policy = policy
@@ -156,32 +164,86 @@ class FakeRobotEnv():
             self.post_process = lambda a: ((a + 1) / 2) * (self.stats ['action_max'] - self.stats ['action_min']) + self.stats ['action_min']
         #############################################################################################################
 
-    def step(self, t):
-        if len(self.action_queue) ==0:
+    # def step(self,t, originla_quat = True):
+    #     
+    #     if len(self.action_queue) ==0:
+    #         return
+    #     cur_action = self.action_queue.popleft()
+    #     last_action = cur_action
+    #     while len(self.action_queue)>0:
+    #         last_action = cur_action
+    #         cur_action = self.action_queue.popleft()
+    #         seg_vec = cur_action[0] - last_action[0]
+    #         direction = seg_vec.normalized()
+    #         orientation = direction / np.linalg.norm(direction) 
+    #         quaternion = direction_to_combined_quaternion(orientation)
+    #         angle_rad = np.arctan2(direction[2],direction[0])
+    #         angle_deg = np.degrees(angle_rad)
+    #         # print(f"cal direction is {angle_deg}")
+
+    #     if originla_quat:
+    #         self.set_state(cur_action[0], cur_action[1])
+    #     else:
+    #         self.set_state(cur_action[0], quaternion)
+    def step(self,t, originla_quat = True):
+        from habitat_for_sim.agent.path_generator import direction_to_combined_quaternion
+        if len(self.action_queue) <=1:
             return
-        # habitat_action = self.action_queue.popleft()
-        while len(self.action_queue)>0:
-            habitat_action = self.action_queue.popleft()
+        last_action = self.action_queue.popleft()
+        cur_action = self.action_queue.popleft()
+        seg_vec = cur_action[0] - last_action[0]
+        direction = seg_vec.normalized()
+        orientation = direction / np.linalg.norm(direction) 
+        quaternion = direction_to_combined_quaternion(orientation)
+        if originla_quat:
+            self.set_state(cur_action[0], cur_action[1])
+        else:
+            self.set_state(cur_action[0], quaternion)
+
+
+    def compare_step(self, comp_size, distance):
+        
+        if self.step_idx + comp_size > len(self.step_actions) - 1:
+            self.step_actions = []
+            self.step_idx = 0
+            while len(self.action_queue) > 18:
+                self.step_actions.append(self.action_queue.popleft())
+
+        else:
+            new_actions = []
+            while len(self.action_queue) > 18:
+                new_actions.append(self.action_queue.popleft())
+            
+            origin_future_steps = self.step_actions[self.step_idx:self.step_idx+comp_size]
+            new_future_steps = new_actions[0:comp_size]
+            changed = False
+            if changed:
+                self.step_actions = new_actions
+                self.step_idx = 0
+            else:
+                move_dis = 0
+                for i in range(self.step_idx, len(self.step_actions)):
+                    if move_dis > distance:
+                        self.step_idx = i
+                        break
+
+                    cur_action = self.step_actions[i]
+                    next_action = self.step_actions[i+1]
+                    seg_vec = next_action[0] - cur_action[0]
+
+                    seg_len = seg_vec.length()
+                    move_dis += seg_len
+
+                    direction = seg_vec.normalized()
+                    orientation = direction / np.linalg.norm(direction) 
+                    quaternion = direction_to_combined_quaternion(orientation)
+                    self.set_state(cur_action[0], quaternion)
+
+            
+
+
         
         
-        # raw_action = raw_action.squeeze(0).cpu().to(dtype=torch.float32).numpy()
-        ### 8. post process actions##########################################################
-        # action = self.post_process(raw_action) !!wzj
-
-        # print(f"Step, action is: {action}")
-        #####################################################################################
-        # print(f"after post_process action size: {action.shape}")
-        # print(f'step {t}, pred action: {outputs}{action}')
-        # if len(action.shape) == 2:
-        #     action = action[0]
-        ##### Execute ######################################################################
-        # action = action.tolist()
-
-
-        self.set_state(habitat_action[0], habitat_action[1])
-
-        # action_info = self.step(action.tolist())
-
 
     def eval_bc(self):
 
@@ -249,8 +311,8 @@ class FakeRobotEnv():
             #switch
             cur_state = self.get_state()
             cur_position = cur_state.position
-            cur_rotation = cur_state.rotation
-            cur_yaw,_ = quat_to_angle_axis(cur_rotation)
+            cur_quat = cur_state.rotation
+            cur_yaw,_ = quat_to_angle_axis(cur_quat)
             
             local_actions = self.local_actions.copy()
             # local_actions[:,0] = -local_actions[:,0]
@@ -259,7 +321,7 @@ class FakeRobotEnv():
             # 拼接成 (30, 4)，在 dim=1 方向添加
             local_actions = np.insert(local_actions, 1, 0, axis=1)
             
-            world_actions = local2world_position_yaw(local_actions, self.qpos, np.array([cur_position[0], cur_position[1], cur_position[2]]), cur_yaw)
+            world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),cur_yaw, type=1)
             self.world_actions = world_actions
             habitat_actions = []
             for i in range(len(world_actions)):

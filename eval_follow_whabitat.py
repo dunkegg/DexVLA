@@ -188,7 +188,7 @@ if __name__ == '__main__':
             pass
 
         simulator = load_simulator(cfg)
-        agilex_bot.reset(simulator.agents[0],n_frames=10)
+        
         semantic_scene = simulator.semantic_scene
         pathfinder = simulator.pathfinder
         pathfinder.seed(cfg.seed)
@@ -227,12 +227,16 @@ if __name__ == '__main__':
         for episode_id, episode_data in enumerate(tqdm(episodes)):
             if all_index > 100:
                 break
-            if episode_id%10 != 0:
+            if all_index < 38:
+                all_index+=1
                 continue
+            if episode_id%5 != 0:
+                continue
+
             if episodes_count > max_episodes:
                 break
-
-            human_fps = 5
+            
+            human_fps = 10
             human_speed = 0.7
             followed_path = generate_path_from_scene(episode_data, pathfinder, 10, human_fps, human_speed)
             if followed_path is None:
@@ -251,17 +255,22 @@ if __name__ == '__main__':
                     interfering_path = get_path_with_time(interfering_path, time_step=1/human_fps, speed=0.9)
                     interfering_humanoid.reset_path(interfering_path)
                 
-
-            output_data = walk_along_path_multi(
-                all_index=all_index,
-                sim=simulator,
-                humanoid_agent=target_humanoid,
-                human_path=followed_path,
-                fps=10,
-                timestep_gap = 1/human_fps, 
-                interfering_humanoids=interfering_humanoids,
-                robot = agilex_bot
-            )
+            agilex_bot.reset(simulator.agents[0],n_frames=8)
+            try:
+                output_data = walk_along_path_multi(
+                    all_index=all_index,
+                    sim=simulator,
+                    humanoid_agent=target_humanoid,
+                    human_path=followed_path,
+                    fps=10,
+                    forward_speed=human_speed,
+                    timestep_gap = 1/human_fps, 
+                    interfering_humanoids=interfering_humanoids,
+                    robot = agilex_bot
+                )
+            except Exception as e:
+                print(e)
+                continue
 
 
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")

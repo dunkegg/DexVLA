@@ -89,6 +89,29 @@ def world2local(rel_path: np.ndarray,
     
     return out.astype(np.float32),human_local
 
+def world2local_target(
+                human_state:  np.ndarray,
+                follow_quat: mn.Quaternion,
+                type: int) -> np.ndarray:
+    """
+    rel_path : (N, 8)  已经做过 位置减 follow_pos
+               列序 [x y z w x y z yaw_world]
+    follow_quat : mn.Quaternion  (w, xyz)  用于旋转向量
+    follow_yaw  : float (rad)    已有的朝向标量
+    """
+    R_inv = follow_quat.inverted()          # q_f⁻¹
+
+
+    human_local = R_inv.transform_vector(mn.Vector3(*human_state))
+
+    if type ==1:
+        # human_local =  [-human_local.x, human_local.y, human_local.z]
+        human_local =  [human_local.x, human_local.y, -human_local.z]
+    else:
+        human_local =  [-human_local.x, human_local.y, -human_local.z]
+    
+    return human_local
+
 def world2local_yawXZ(rel_path: np.ndarray,
                       human_state: np.ndarray,      # (3,)
                       follow_yaw: float):

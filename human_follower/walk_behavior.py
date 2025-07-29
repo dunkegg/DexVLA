@@ -463,41 +463,47 @@ def walk_along_path_multi(
                                                                             observations = observations, output = output, follow_timestep = follow_timestep,follow_state = follow_state)
         else:
             now = timestep_gap * time_step
-            if False:
+            if True:
                 
-                sample_fps = 4
-                plan_fps = 0.4
+                sample_fps = 1.3
+                plan_fps = fps
                 step_fps = 0.4
                 if now - last_sample_time >= 1/sample_fps:
                     last_sample_time = now
                     obs = sim.get_sensor_observations(0)
                     robot.set_obs(obs['color_0_0'], now, save=True)
-                if now - last_plan_time >= 1/plan_fps:
+                if now - last_plan_time >= 1/plan_fps and now > 3:
                     last_plan_time = now
                     robot.eval_bc()
                     position,yaw,quat = humanoid_agent.get_pose()
                     robot.save_obs(now, position)
-                if now - last_step_time >= 1/step_fps:
-                    last_step_time = now
-                    robot.step(now)
+                    robot.compare_step(5, forward_speed/fps)
+                    # for k in range(7):
+                    #     now += 0.1
+                    #     robot.step(now,originla_quat=False)
+                    #     obs = sim.get_sensor_observations(0)
+                    #     robot.set_obs(obs['color_0_0'], now, save=True)
+                # if now - last_step_time >= 1/step_fps:
+                #     last_step_time = now
 
-                if time_step == len(human_path)-1:
-                    robot.eval_bc()
-                    position,yaw,quat = humanoid_agent.get_pose()
-                    robot.save_obs(now, position)
-                    robot.step(now)
+
+                # if time_step == len(human_path)-1:
+                #     robot.eval_bc()
+                #     position,yaw,quat = humanoid_agent.get_pose()
+                #     robot.save_obs(now, position)
+                #     robot.step(now,originla_quat=False)
             else:
                 if time_step%3 == 0:
                     obs = sim.get_sensor_observations(0)
                     robot.set_obs(obs['color_0_0'], now, save=True)
-                # if move_dis - last_dis > 4:
-                #     last_dis = move_dis
-                #     cur_follow_timestep = follow_timestep
-                #     for t in range(cur_follow_timestep, time_step,3):
-                #         pos, quat, yaw = human_path[t]
-                #         obs = sim.get_sensor_observations(0)
-                #         robot.set_obs(obs['color_0_0'], now, save=True)
-                #         robot.set_state(pos, to_quat(quat))
+                if move_dis - last_dis > 3:
+                    last_dis = move_dis
+                    cur_follow_timestep = follow_timestep
+                    for t in range(cur_follow_timestep, time_step,3):
+                        pos, quat, yaw = human_path[t]
+                        obs = sim.get_sensor_observations(0)
+                        robot.set_obs(obs['color_0_0'], now, save=True)
+                        robot.set_state(pos, to_quat(quat))
                 if move_dis - last_plan_dis > 2:
                     last_plan_dis = move_dis
                     robot.eval_bc()
@@ -506,15 +512,17 @@ def walk_along_path_multi(
 
             
             
-
+    if robot:
+        observations = [{"color_0_0": obs} for obs in robot.get_observations()]
     output["obs"] = observations
-    if all_index < 10:
-        os.makedirs("results2", exist_ok=True)
+    if all_index < 200:
+        video_output = "results_eval"
+        os.makedirs(video_output, exist_ok=True)
         vut.make_video(
             observations,
             "color_0_0",
             "color",
-            f"results2/humanoid_wrapper_{all_index}",
+            f"{video_output}/humanoid_wrapper_{all_index}",
             open_vid=False,
         )
     print("walk done")

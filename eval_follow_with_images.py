@@ -56,7 +56,7 @@ class qwen2_vla_policy:
         self.tokenizer.add_special_tokens({'additional_special_tokens': ["[SOA]"]})
 
         self.config = AutoConfig.from_pretrained('/'.join(model_path.split('/')[:-1]), trust_remote_code=True)
-    def datastruct_droid2qwen2vla(self, raw_lang,len_image=6):
+    def datastruct_droid2qwen2vla(self, raw_lang,len_image=8):
 
         messages = [
             {
@@ -117,7 +117,7 @@ class qwen2_vla_policy:
         return data_dict
 
 
-def eval_bc(i,policy, target,deploy_env, policy_config, raw_lang=None, query_frequency=16):
+def eval_bc(i,policy, target, deploy_env, policy_config, raw_lang=None, query_frequency=16, target_actions = None):
 
     assert raw_lang is not None, "raw lang is None!!!!!!"
     set_seed(0)
@@ -177,7 +177,7 @@ def eval_bc(i,policy, target,deploy_env, policy_config, raw_lang=None, query_fre
             all_actions = all_actions.squeeze(0)  #
             all_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
             all_actions = np.array([post_process(raw_action) for raw_action in all_actions])
-        result = plot_obs(i, all_actions,raw_lang, obs['top'][-1], target)
+        result = plot_obs(i, all_actions,raw_lang, obs['top'][-1], human_position = target, target_actions=target_actions)
         return result
 
 
@@ -230,12 +230,13 @@ def extract_obs_and_paths(h5_file_path):
                 obs_idx = ep_group['obs_idx'][()]
                 rel_path = ep_group['rel_path'][()]
                 images = ep_group['observations/images'][()].decode('utf-8')
-
+                actions = ep_group['action'][()]
                 # 保存到结果字典中
                 results[ep_key] = {
                     'obs_idx': obs_idx,
                     'rel_path': rel_path[-1],
                     'images': images,
+                    'actions': actions
                 }
             except KeyError as e:
                 print(f"[WARN] Missing key in episode {ep_key}: {e}")
@@ -255,13 +256,39 @@ def get_history_frames(frame_paths, idx, n_frames):
         selected = pad + selected
 
     return selected
+from pathlib import Path
+def collect_n_frame_paths(image_folder, n_frames):
+    image_folder = Path(image_folder)
+    image_paths = list(image_folder.glob("*.png"))
+    image_paths = sorted(
+        image_paths,
+        key=lambda x: float(x.stem)  # .stem 去掉后缀，只保留 '0.0'
+    )
+    n = len(image_paths)
+    grouped_paths = []
+
+    for i in range(len(image_paths)):
+        if i + 1 < n_frames:
+            pad = [image_paths[0]] * (n_frames - i - 1)
+            frames = pad + image_paths[:i + 1]
+        else:
+            frames = image_paths[i + 1 - n_frames:i + 1]
+
+        grouped_paths.append([str(p) for p in frames])  # 转换为字符串
+
+    # 获取输出目录：与 image_folder 同级，名为 processed_frames
+    output_dir = image_folder.parent / "predicted"
+    output_dir.mkdir(exist_ok=True)
+
+    return grouped_paths, str(output_dir)
+
 if __name__ == '__main__':
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>hyper parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     action_head = 'scale_dp_policy'  # or 'unet_diffusion_policy'
     query_frequency = 30
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/qwen2_single_follow_distance",
+        "model_path": "OUTPUT/single_follow_normal/checkpoint-20000",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune
@@ -287,50 +314,34 @@ if __name__ == '__main__':
     policy = qwen2_vla_policy(policy_config)
     #######################################
     import os
+    for k in range(0,23):
+        folder_path = f'eval_plot8/episode_{k}/sample'
+        if not os.path.exists(folder_path):
+            continue
+        grouped_paths, output_root =  collect_n_frame_paths(folder_path,8)
+        os.makedirs(output_root, exist_ok=True)
+        for i, frames in enumerate(grouped_paths):
 
-    folder_path = 'test_data/follow3'
-    test_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
-    output_root = "test_data/visulization_rr"
-    os.makedirs(output_root, exist_ok=True)
-    for i, file_path in enumerate(test_files):
-        # def print_hdf5_structure(file_path):
-        #     def print_attrs(name, obj):
-        #         print(name)
-        #     with h5py.File(file_path, 'r') as f:
-        #         f.visititems(print_attrs)
-        
-        # 示例使用
-        # print_hdf5_structure(file_path)
-        file_output_dir = os.path.join(output_root, f"file_{i:03d}")
-        os.makedirs(file_output_dir, exist_ok=True)
-        frames_paths, data  =extract_obs_and_paths(file_path)
+            raw_lang = "follow the human"
+            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            
+            
 
-        frames_paths = frames_paths[1:]
-        raw_lang = "follow the human"
-        raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
-        
-        n_frames = 6
-        for ep_id, (ep_key, ep_data) in enumerate(data.items()):
-            if ep_data["obs_idx"] ==0:
-                continue
-
-            frames = get_history_frames(frames_paths, ep_data["obs_idx"]-1, n_frames)
             compressed = False
             images = []
             rank = 0
             for img_path in frames:
-                img_path = img_path.replace("frames/", f"frames_{rank}/")
                 img = cv2.imread(img_path)
                 if compressed:
                     img = cv2.imdecode(img, 1)
                 img = cv2.resize(img,  eval("(320,240)"))
                 images.append(img)
 
-            target = [ep_data["rel_path"][0], ep_data["rel_path"][1], ep_data["rel_path"][2]]
+            # target = [ep_data["rel_path"][0], ep_data["rel_path"][1], ep_data["rel_path"][2]]
             agilex_bot.set_obs(images, np.array([0,0,0]))
             # agilex_bot.set_info(actions, language_raw)
-            result_image = eval_bc(i,policy, target,agilex_bot, policy_config, raw_lang=raw_lang, query_frequency=query_frequency)
-            out_path = os.path.join(file_output_dir, f"ep_{ep_id:04d}.png")
+            result_image = eval_bc(i,policy, None,  agilex_bot, policy_config, raw_lang=raw_lang, query_frequency=query_frequency, target_actions=None)
+            out_path = os.path.join(output_root, Path(frames[-1]).name)
             cv2.imwrite(out_path, cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR))
         # break
 

@@ -103,7 +103,7 @@ def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, fr
     print(f"✅ Saved: {save_path}")
 
 
-def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
+def plot_obs(time,predicted_actions,raw_lang, obs,human_position, target_actions = None):
     # for idx, img in enumerate(frames):
     #     out_path = os.path.join(output_dir, f"case_{i}_frame_{idx:04d}.png")  # 命名格式: frame_0000.png
     #     cv2.imwrite(out_path, img)
@@ -111,7 +111,7 @@ def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
 
     # 颜色设置
     pred_color = 'tab:blue'
-    # target_color = 'tab:blue'
+    target_color = 'tab:red'
 
     # 遍历每个 batch
     # for i in range(predicted_actions.shape[0]):
@@ -122,6 +122,9 @@ def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
 
 
     pred_xy = pred[:, :2] - pred_base
+    if human_position is not None:
+        human_position[0] = human_position[0] - pred_base[0]
+        human_position[2] = human_position[2] - pred_base[1]
     pred_yaw = pred[:, 2:]
 
     # 组合回原来的形状
@@ -146,7 +149,13 @@ def plot_obs(time,predicted_actions, raw_lang, obs,human_position):
     # ax_yaw = fig.add_subplot(2, 2, 4)
 
     ax_xy.plot(pred[:, 0], pred[:, 1], color=pred_color, label='Predicted XY')
-    ax_xy.scatter(human_position[0], human_position[2], color='red', s=50, label='End Point')
+    ax_xy.plot(pred[:16, 0], pred[:16, 1], color='purple', label='Early Steps (0~15)', linewidth=2)
+    ax_xy.plot(pred[:12, 0], pred[:12, 1], color='yellow', label='Early Steps (0~11)', linewidth=2)
+    if target_actions is not None:
+        ax_xy.plot(target_actions[:, 0], target_actions[:, 1], color=target_color, label='Target XY')
+    if human_position is not None:
+        ax_xy.scatter(human_position[0], human_position[2], color='red', s=50, label='End Point')
+        
     ax_xy.set_title(raw_lang)
     ax_xy.set_xlabel('X')
     ax_xy.set_ylabel('Y')
