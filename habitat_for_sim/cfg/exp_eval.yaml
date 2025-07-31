@@ -1,14 +1,18 @@
 # General
 seed: 42
-exp_name: follow
-output_parent_dir: results/
+exp_name: view_sample
+output_parent_dir: results/sample1
+
 save_obs: true
 save_freq: 10
 multi_agent: true
-#json_file_path: /data2/zejinw/ON-MLLM/hm3d/ovon_data/hm3d/val_seen/content
-teacher_forcing_module: true
-simple_sample_method: true
-shortest_path: true
+scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
+json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
+model_path: OUTPUT/single_follow_normal/checkpoint-20000
+
+
+max_episodes: 1000
+multi_humanoids: false
 
 # Camera, image
 camera_height: 1.5
@@ -36,3 +40,8 @@ visual_prompt:
   cam_offset: 0.6
   min_num_prompt_points: 2
   circle_radius: 18
+
+
+img_output_dir: eval_plot
+video_output_dir: results_eval
+log_path: logs/log_2025-07-31_17-17-17.json

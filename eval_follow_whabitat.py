@@ -8,6 +8,7 @@ import json
 import magnum as mn
 from tqdm import tqdm
 import habitat_sim
+from habitat_sim.utils import viz_utils as vut
 print(habitat_sim.__file__)
 
 from habitat_for_sim.utils.goat import read_yaml, extract_dict_from_folder, get_current_scene, process_episodes_and_goals, convert_to_scene_objects, find_scene_path, calculate_euclidean_distance
@@ -33,6 +34,19 @@ from evaluate_dexvln.record import create_log_json, append_log
 def time_ms():
     return time.time_ns() // 1_000_000
 
+import re
+
+def get_max_episode_number(root_dir):
+    max_num = -1
+    for name in os.listdir(root_dir):
+        if os.path.isdir(os.path.join(root_dir, name)):
+            match = re.match(r'episode_(\d+)', name)
+            if match:
+                num = int(match.group(1))
+                if num > max_num:
+                    max_num = num
+    return max_num
+
 def check_episode_validity(obs_ds, threshold: float = 0.3):
     """检查前 max_check_frames 帧是否有效（大面积黑图则无效）"""
 
@@ -47,13 +61,19 @@ def check_episode_validity(obs_ds, threshold: float = 0.3):
     return True
 
 if __name__ == '__main__':
-    log_path = create_log_json()
+    
+    yaml_file_path = "habitat_for_sim/cfg/exp_eval.yaml"
+    cfg = read_yaml(yaml_file_path)
+    json_data = cfg.json_file_path
+    img_output_dir = cfg.img_output_dir
+    video_output_dir = cfg.video_output_dir
+    log_path = create_log_json() if cfg.log_path is None else cfg.log_path 
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>hyper parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     action_head = 'scale_dp_policy'  # or 'unet_diffusion_policy'
     query_frequency = 16
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/single_follow_normal/checkpoint-20000",
+        "model_path": cfg.model_path,
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune
@@ -63,13 +83,10 @@ if __name__ == '__main__':
 
     # fake env for debug
     policy = qwen2_vla_policy(policy_config)
-    agilex_bot = FakeRobotEnv(policy_config, policy)
+    agilex_bot = FakeRobotEnv(policy_config, policy,plot_dir=img_output_dir)
     ######################################
     
 
-    yaml_file_path = "habitat_for_sim/cfg/exp.yaml"
-    cfg = read_yaml(yaml_file_path)
-    json_data = cfg.json_file_path
     
     # 初始化目标文件列表
     target_files = []   
@@ -82,8 +99,8 @@ if __name__ == '__main__':
             target_files.append(relative_path)
     
     
-    cfg.output_dir = os.path.join(cfg.output_parent_dir, cfg.exp_name)
-    
+    # cfg.output_dir = os.path.join(cfg.output_parent_dir, cfg.exp_name)
+
     data = extract_dict_from_folder(json_data, target_files)
     
     max_episodes = cfg.max_episodes
@@ -91,11 +108,13 @@ if __name__ == '__main__':
     all_index = 0
     success_count = 0
     episodes_count = 0
+    jump_idx = get_max_episode_number(img_output_dir)
     for file_name, content in data.items():
         if episodes_count > max_episodes:
             break
-        
-            
+        if all_index < jump_idx:
+            all_index += 1
+            continue  
         structured_data,  filtered_episodes = process_episodes_and_goals(content)
         episodes = convert_to_scene_objects(structured_data, filtered_episodes)
                 
@@ -151,7 +170,9 @@ if __name__ == '__main__':
             if episodes_count > max_episodes:
                 break
 
-            
+            if all_index < jump_idx:
+                all_index += 1
+                continue  
 
             human_fps = 10
             human_speed = 0.7
@@ -178,26 +199,35 @@ if __name__ == '__main__':
                 print("invalid black observations")
                 continue
             agilex_bot.reset(simulator.agents[0],n_frames=8)
-            # try:
-            output_data = walk_along_path_multi(
-                all_index=all_index,
-                sim=simulator,
-                humanoid_agent=target_humanoid,
-                human_path=followed_path,
-                fps=10,
-                forward_speed=human_speed,
-                timestep_gap = 1/human_fps, 
-                interfering_humanoids=interfering_humanoids,
-                robot = agilex_bot
-            )
-            append_log(log_path, index=all_index, success=output_data["follow_result"], sample_fps=output_data["sample_fps"], plan_fps=output_data["plan_fps"], follow_size=output_data["follow_size"])
-            if output_data["follow_result"]:
-                success_count+=1
-            # except Exception as e:
-            #     print(e)
-            #     continue
+            try:
+                output_data = walk_along_path_multi(
+                    all_index=all_index,
+                    sim=simulator,
+                    humanoid_agent=target_humanoid,
+                    human_path=followed_path,
+                    fps=10,
+                    forward_speed=human_speed,
+                    timestep_gap = 1/human_fps, 
+                    interfering_humanoids=interfering_humanoids,
+                    robot = agilex_bot
+                )
+                append_log(log_path, index=all_index, success=output_data["follow_result"], sample_fps=output_data["sample_fps"], plan_fps=output_data["plan_fps"], follow_size=output_data["follow_size"])
+                if output_data["follow_result"]:
+                    success_count+=1
+            except Exception as e:
+                print(e)
+                continue
 
-
+            if all_index < 200:
+                video_output = video_output_dir
+                os.makedirs(video_output, exist_ok=True)
+                vut.make_video(
+                    output_data["obs"],
+                    "color_0_0",
+                    "color",
+                    f"{video_output}/humanoid_wrapper_{all_index}",
+                    open_vid=False,
+                )
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
             all_index+=1
 

@@ -18,7 +18,7 @@ from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , q
 from human_follower.save_data import to_quat
 from habitat_for_sim.agent.path_generator import generate_path
 from habitat_for_sim.utils.frontier_exploration import FrontierExploration
-from habitat_sim.utils import viz_utils as vut
+
 from habitat_for_sim.utils.goat import calculate_euclidean_distance
 def to_vec3(v) -> mn.Vector3:
     """接受 magnum.Vector3 或 list/tuple/np.ndarray"""
@@ -512,16 +512,7 @@ def walk_along_path_multi(
         observations = [{"color_0_0": obs} for obs in robot.get_observations()]
         output["follow_result"] = follow_success
     output["obs"] = observations
-    if all_index < 200:
-        video_output = "results_eval"
-        os.makedirs(video_output, exist_ok=True)
-        vut.make_video(
-            observations,
-            "color_0_0",
-            "color",
-            f"{video_output}/humanoid_wrapper_{all_index}",
-            open_vid=False,
-        )
+
     print("walk done")
     return output
 

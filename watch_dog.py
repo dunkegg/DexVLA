@@ -2,6 +2,7 @@ import subprocess
 import time
 
 cmd = "./scripts/train_dexvla_stage2_follow.sh"
+cmd = "python eval_follow_whabitat.py"
 
 while True:
     print(f"\n🚀 启动脚本：{cmd}")
