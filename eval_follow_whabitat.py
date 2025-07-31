@@ -1,12 +1,6 @@
 import sys
 import os
-from qwen2_vla.model_load_utils import load_model_for_eval
-import time
-
 import random
-from policy_heads import * 
-from qwen2_vla.utils.image_processing_qwen2_vla import *  
-import torch
 import numpy as np
 import h5py
 import cv2
@@ -33,98 +27,27 @@ from habitat_for_sim.utils.explore.explore_habitat import (
     pose_habitat_to_normal,
     pose_normal_to_tsdf,
 )
-from evaluate_dexvln.robot import FakeRobotEnv
-
+from evaluate_dexvln.robot import FakeRobotEnv, qwen2_vla_policy
+from evaluate_dexvln.record import create_log_json, append_log
 
 def time_ms():
     return time.time_ns() // 1_000_000
 
-class qwen2_vla_policy:
-    def __init__(self, policy_config, data_args=None):
-        super(qwen2_vla_policy).__init__()
-        self.load_policy(policy_config)
-        self.data_args = data_args
+def check_episode_validity(obs_ds, threshold: float = 0.3):
+    """检查前 max_check_frames 帧是否有效（大面积黑图则无效）"""
 
-    def load_policy(self, policy_config):
-        self.policy_config = policy_config
-        model_base = policy_config["model_base"] if policy_config[
-            'enable_lora'] else None
-        model_path = policy_config["model_path"]
-
-        self.tokenizer, self.policy, self.multimodal_processor, self.context_len = load_model_for_eval(model_path=model_path,
-                                                                                                    model_base=model_base, policy_config=policy_config)
-        self.tokenizer.add_special_tokens({'additional_special_tokens': ["[SOA]"]})
-
-        self.config = AutoConfig.from_pretrained('/'.join(model_path.split('/')[:-1]), trust_remote_code=True)
-    def datastruct_droid2qwen2vla(self, raw_lang,len_image):
-
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                ],
-            },
-            # {"role": "assistant", "content": f''},
-        ]
-        for i in range(len_image):
-            messages[0]['content'].append({
-                "type": "image",
-                "image": None,
-            })
-        messages[0]['content'].append({
-            "type": "text",
-            "text": raw_lang,
-        })
-        # messages[0]['content'][-1]['text'] = raw_lang
-
-        return messages
-    def process_batch_to_qwen2_vla(self, curr_image, robo_state, raw_lang,n_frames):
-
-        if len(curr_image.shape) == 5:  # 1,2,3,270,480
-            curr_image = curr_image.squeeze(0)
-
-        messages = self.datastruct_droid2qwen2vla(raw_lang,n_frames)
-        image_data = torch.chunk(curr_image, curr_image.shape[0], dim=0)  # top, left_wrist, right_wrist
-        image_list = []
-        for i, each in enumerate(image_data):
-            ele = {}
-            each = Image.fromarray(each.cpu().squeeze(0).permute(1, 2, 0).numpy().astype(np.uint8))
-            if each.mode == 'RGBA':
-                each = each.convert('RGB')  # 去掉 alpha 通道
-
-            ele['image'] = each
-            ele['resized_height'] = 240
-            ele['resized_width'] = 320
-
-            image_list.append(torch.from_numpy(np.array(each)))
-        # image_data = image_data / 255.0
-        image_data = image_list
-        ######################
-        video_inputs = [image_list]
-        # image_data = None
-        video_inputs=None
-        ######################
-        text = self.multimodal_processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-
-        model_inputs = self.multimodal_processor(
-            text=text,
-            images=image_data,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        )
-        data_dict = dict(states=robo_state)
-        for k, v in model_inputs.items():
-            data_dict[k] = v
-        return data_dict
-
-
-
-
+    rgb = obs_ds
+    height, width = rgb.shape[:2]  # 自动读取图像高宽
+    rgb3 = rgb[..., :3]  # 只取前三通道
+    num_black_pixels = np.sum(np.all(rgb3 == 0, axis=-1))
+    # num_black_pixels = np.sum(np.sum(rgb, axis=-1) == 0)
+    if num_black_pixels >= threshold * width * height:
+        return False  # 当前帧是大面积黑图
+    
+    return True
 
 if __name__ == '__main__':
+    log_path = create_log_json()
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>hyper parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     action_head = 'scale_dp_policy'  # or 'unet_diffusion_policy'
     query_frequency = 16
@@ -166,20 +89,17 @@ if __name__ == '__main__':
     max_episodes = cfg.max_episodes
 
     all_index = 0
+    success_count = 0
     episodes_count = 0
     for file_name, content in data.items():
-        if all_index > 100:
-            break
         if episodes_count > max_episodes:
             break
         
-
-        print(f"Processing {file_name}:")
+            
         structured_data,  filtered_episodes = process_episodes_and_goals(content)
         episodes = convert_to_scene_objects(structured_data, filtered_episodes)
                 
         cfg.current_scene = get_current_scene(structured_data)
-        
         
         # Set up scene in Habitat
         try:
@@ -222,20 +142,17 @@ if __name__ == '__main__':
                 interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(0, 0.083, 0), base_yaw = 0, name = interferer_name, description = interferer_description, is_target=False)
                 all_interfering_humanoids.append(interferer)
 
+    
+        reset_state = simulator.agents[0].get_state()
+        
 
         print("begin")
         for episode_id, episode_data in enumerate(tqdm(episodes)):
-            if all_index > 100:
-                break
-            if all_index < 38:
-                all_index+=1
-                continue
-            if episode_id%5 != 0:
-                continue
-
             if episodes_count > max_episodes:
                 break
+
             
+
             human_fps = 10
             human_speed = 0.7
             followed_path = generate_path_from_scene(episode_data, pathfinder, 10, human_fps, human_speed)
@@ -255,28 +172,36 @@ if __name__ == '__main__':
                     interfering_path = get_path_with_time(interfering_path, time_step=1/human_fps, speed=0.9)
                     interfering_humanoid.reset_path(interfering_path)
                 
-            agilex_bot.reset(simulator.agents[0],n_frames=8)
-            try:
-                output_data = walk_along_path_multi(
-                    all_index=all_index,
-                    sim=simulator,
-                    humanoid_agent=target_humanoid,
-                    human_path=followed_path,
-                    fps=10,
-                    forward_speed=human_speed,
-                    timestep_gap = 1/human_fps, 
-                    interfering_humanoids=interfering_humanoids,
-                    robot = agilex_bot
-                )
-            except Exception as e:
-                print(e)
+            simulator.agents[0].set_state(reset_state)
+            obs = simulator.get_sensor_observations(0)['color_0_0']
+            if not check_episode_validity(obs, threshold=0.3):
+                print("invalid black observations")
                 continue
+            agilex_bot.reset(simulator.agents[0],n_frames=8)
+            # try:
+            output_data = walk_along_path_multi(
+                all_index=all_index,
+                sim=simulator,
+                humanoid_agent=target_humanoid,
+                human_path=followed_path,
+                fps=10,
+                forward_speed=human_speed,
+                timestep_gap = 1/human_fps, 
+                interfering_humanoids=interfering_humanoids,
+                robot = agilex_bot
+            )
+            append_log(log_path, index=all_index, success=output_data["follow_result"], sample_fps=output_data["sample_fps"], plan_fps=output_data["plan_fps"], follow_size=output_data["follow_size"])
+            if output_data["follow_result"]:
+                success_count+=1
+            # except Exception as e:
+            #     print(e)
+            #     continue
 
 
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
             all_index+=1
 
-            print("done")
+            print(f"Success Rate: {success_count/all_index}")
             
 
 

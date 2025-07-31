@@ -388,6 +388,8 @@ def walk_along_path_multi(
         robot.set_episode_id(all_index)
     output = {"obs": [], "follow_paths": []}
     
+    follow_success = False
+
     keep_distance = 0.7
 
 
@@ -418,6 +420,7 @@ def walk_along_path_multi(
     last_sample_time = 0
     last_plan_time = 0
     last_step_time = 0
+    
     for time_step in range(2, len(human_path)):
         goal_pos, goal_quat, goal_yaw = human_path[time_step]
 
@@ -463,57 +466,51 @@ def walk_along_path_multi(
                                                                             observations = observations, output = output, follow_timestep = follow_timestep,follow_state = follow_state)
         else:
             now = timestep_gap * time_step
-            if True:
+
                 
-                sample_fps = 1.3
-                plan_fps = fps
-                step_fps = 0.4
-                if now - last_sample_time >= 1/sample_fps:
-                    last_sample_time = now
-                    obs = sim.get_sensor_observations(0)
-                    robot.set_obs(obs['color_0_0'], now, save=True)
-                if now - last_plan_time >= 1/plan_fps and now > 3:
-                    last_plan_time = now
-                    robot.eval_bc()
-                    position,yaw,quat = humanoid_agent.get_pose()
-                    robot.save_obs(now, position)
-                    robot.compare_step(5, forward_speed/fps)
-                    # for k in range(7):
-                    #     now += 0.1
-                    #     robot.step(now,originla_quat=False)
-                    #     obs = sim.get_sensor_observations(0)
-                    #     robot.set_obs(obs['color_0_0'], now, save=True)
-                # if now - last_step_time >= 1/step_fps:
-                #     last_step_time = now
+            sample_fps = 1.3
+            sample_fps = 3
+            plan_fps = 10
+            follow_size = 5
+            output["sample_fps"] = sample_fps
+            output["plan_fps"] = plan_fps
+            output["follow_size"] = follow_size
+            # step_fps = 0.4
+            output
+            if now - last_sample_time >= 1/sample_fps:
+                last_sample_time = now
+                obs = sim.get_sensor_observations(0)
+                robot.set_obs(obs['color_0_0'], now, save=True)
+            if now - last_plan_time >= 1/plan_fps and now > 3:
+                last_plan_time = now
+                robot.eval_bc()
+                position,yaw,quat = humanoid_agent.get_pose()
+                robot.save_obs(now, position)
+                robot.compare_step(follow_size, forward_speed/plan_fps)
 
-
-                # if time_step == len(human_path)-1:
-                #     robot.eval_bc()
-                #     position,yaw,quat = humanoid_agent.get_pose()
-                #     robot.save_obs(now, position)
-                #     robot.step(now,originla_quat=False)
-            else:
-                if time_step%3 == 0:
-                    obs = sim.get_sensor_observations(0)
-                    robot.set_obs(obs['color_0_0'], now, save=True)
-                if move_dis - last_dis > 3:
-                    last_dis = move_dis
-                    cur_follow_timestep = follow_timestep
-                    for t in range(cur_follow_timestep, time_step,3):
-                        pos, quat, yaw = human_path[t]
+            if time_step == len(human_path)-1:
+                step_range = int(1.5/(forward_speed*timestep_gap))
+                last_sample = 0
+                for i in range(step_range):
+                    if (i/forward_speed)*timestep_gap - last_sample >= 1/sample_fps:
+                        last_sample = (i/forward_speed)*timestep_gap
                         obs = sim.get_sensor_observations(0)
                         robot.set_obs(obs['color_0_0'], now, save=True)
-                        robot.set_state(pos, to_quat(quat))
-                if move_dis - last_plan_dis > 2:
-                    last_plan_dis = move_dis
                     robot.eval_bc()
                     position,yaw,quat = humanoid_agent.get_pose()
                     robot.save_obs(now, position)
+                    robot.compare_step(follow_size, forward_speed/plan_fps)
+                
+                if calculate_euclidean_distance(position, goal_pos) < 2:
+                    follow_success = True
+
+
 
             
             
     if robot:
         observations = [{"color_0_0": obs} for obs in robot.get_observations()]
+        output["follow_result"] = follow_success
     output["obs"] = observations
     if all_index < 200:
         video_output = "results_eval"

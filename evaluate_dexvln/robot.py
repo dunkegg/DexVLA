@@ -12,6 +12,13 @@ from evaluate.visualize_action import plot_actions, plot_obs
 from collections import deque
 import imageio
 from PIL import Image
+
+
+from qwen2_vla.model_load_utils import load_model_for_eval
+from policy_heads import * 
+from qwen2_vla.utils.image_processing_qwen2_vla import *  
+
+
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
     tmp = (tmp - stats[key + '_mean']) / stats[key + '_std']
@@ -36,6 +43,87 @@ def process_obs(obs, states, stats):
     cur_state = np.expand_dims(cur_state_np, axis=0)
 
     return traj_rgb_np, cur_state # images, states
+
+class qwen2_vla_policy:
+    def __init__(self, policy_config, data_args=None):
+        super(qwen2_vla_policy).__init__()
+        self.load_policy(policy_config)
+        self.data_args = data_args
+
+    def load_policy(self, policy_config):
+        self.policy_config = policy_config
+        model_base = policy_config["model_base"] if policy_config[
+            'enable_lora'] else None
+        model_path = policy_config["model_path"]
+
+        self.tokenizer, self.policy, self.multimodal_processor, self.context_len = load_model_for_eval(model_path=model_path,
+                                                                                                    model_base=model_base, policy_config=policy_config)
+        self.tokenizer.add_special_tokens({'additional_special_tokens': ["[SOA]"]})
+
+        self.config = AutoConfig.from_pretrained('/'.join(model_path.split('/')[:-1]), trust_remote_code=True)
+    def datastruct_droid2qwen2vla(self, raw_lang,len_image):
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                ],
+            },
+            # {"role": "assistant", "content": f''},
+        ]
+        for i in range(len_image):
+            messages[0]['content'].append({
+                "type": "image",
+                "image": None,
+            })
+        messages[0]['content'].append({
+            "type": "text",
+            "text": raw_lang,
+        })
+        # messages[0]['content'][-1]['text'] = raw_lang
+
+        return messages
+    def process_batch_to_qwen2_vla(self, curr_image, robo_state, raw_lang,n_frames):
+
+        if len(curr_image.shape) == 5:  # 1,2,3,270,480
+            curr_image = curr_image.squeeze(0)
+
+        messages = self.datastruct_droid2qwen2vla(raw_lang,n_frames)
+        image_data = torch.chunk(curr_image, curr_image.shape[0], dim=0)  # top, left_wrist, right_wrist
+        image_list = []
+        for i, each in enumerate(image_data):
+            ele = {}
+            each = Image.fromarray(each.cpu().squeeze(0).permute(1, 2, 0).numpy().astype(np.uint8))
+            if each.mode == 'RGBA':
+                each = each.convert('RGB')  # 去掉 alpha 通道
+
+            ele['image'] = each
+            ele['resized_height'] = 240
+            ele['resized_width'] = 320
+
+            image_list.append(torch.from_numpy(np.array(each)))
+        # image_data = image_data / 255.0
+        image_data = image_list
+        ######################
+        video_inputs = [image_list]
+        # image_data = None
+        video_inputs=None
+        ######################
+        text = self.multimodal_processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+
+        model_inputs = self.multimodal_processor(
+            text=text,
+            images=image_data,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        data_dict = dict(states=robo_state)
+        for k, v in model_inputs.items():
+            data_dict[k] = v
+        return data_dict
 
 
 
@@ -232,6 +320,8 @@ class FakeRobotEnv():
                     seg_vec = next_action[0] - cur_action[0]
 
                     seg_len = seg_vec.length()
+                    if seg_len <1e-4:
+                        continue
                     move_dis += seg_len
 
                     direction = seg_vec.normalized()
