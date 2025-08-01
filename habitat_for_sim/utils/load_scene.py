@@ -66,17 +66,17 @@ def generate_path_from_scene(obj_data, pathfinder,min_distance = 5 ,human_fps = 
         start_floor_height = start_position[1]  # y 值代表高度
         goal_floor_height = goal_position[1]
         if abs(start_floor_height - goal_floor_height) > 1:
-            # print(f"Skipping episode due to height difference: {start_floor_height} vs {goal_floor_height}")
+            print(f"Skipping episode due to height difference: {start_floor_height} vs {goal_floor_height}")
             return None
         path = shortest_path.points
-        all_distance = 0
-        for i in range(len(path)-1):
-            distance = calculate_euclidean_distance(path[i], path[i+1])
-            all_distance+=distance
+        # all_distance = 0
+        # for i in range(len(path)-1):
+        #     distance = calculate_euclidean_distance(path[i], path[i+1])
+        #     all_distance+=distance
         
-        if all_distance < min_distance:
-            # print(f"Skipping episode due to short distance: {all_distance}m")
-            return None
+        # if all_distance < min_distance:
+        #     # print(f"Skipping episode due to short distance: {all_distance}m")
+        #     return None
         
 
         # 检查路径是否跨楼层 (高度差小于1m)

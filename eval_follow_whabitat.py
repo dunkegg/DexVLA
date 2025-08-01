@@ -35,34 +35,32 @@ from evaluate_dexvln.record import create_log_json, append_log
 
 def make_key(scene: str, idx: int) -> str:
     return f"{scene}_{idx}"
-
 def add_to_blacklist(scene: str, idx: int, blacklist_path: str):
     key = make_key(scene, idx)
 
-    # 如果文件存在就读取，否则新建
-    if os.path.exists(blacklist_path):
-        with open(blacklist_path, 'r') as f:
-            blacklist = json.load(f)
-    else:
-        blacklist = {}
+    # 若已存在就不重复写入
+    if is_in_blacklist(scene, idx, blacklist_path):
+        print(f"⚠️ 已存在于黑名单: {key}")
+        return
 
-    blacklist[key] = True
-
-    with open(blacklist_path, 'w') as f:
-        json.dump(blacklist, f, indent=2)
+    with open(blacklist_path, 'a') as f:
+        f.write(json.dumps({"key": key}) + '\n')
     print(f"✅ 已加入黑名单: {key}")
 
 def is_in_blacklist(scene: str, idx: int, blacklist_path: str) -> bool:
     key = make_key(scene, idx)
-
     if not os.path.exists(blacklist_path):
         return False
 
     with open(blacklist_path, 'r') as f:
-        blacklist = json.load(f)
-
-    return key in blacklist
-
+        for line in f:
+            try:
+                entry = json.loads(line.strip())
+                if entry.get("key") == key:
+                    return True
+            except json.JSONDecodeError:
+                continue
+    return False
 def time_ms():
     return time.time_ns() // 1_000_000
 
@@ -148,11 +146,9 @@ if __name__ == '__main__':
     for file_name, content in sorted(data.items()):
         if episodes_count > max_episodes:
             break
-        if all_index < jump_idx:
-            all_index += 1
-            continue  
+
         structured_data,  filtered_episodes = process_episodes_and_goals(content)
-        episodes = convert_to_scene_objects(structured_data, filtered_episodes, ogn=False)
+        
                 
         cfg.current_scene = current_scene = get_current_scene(structured_data)
         
@@ -171,7 +167,7 @@ if __name__ == '__main__':
             print("Failed to load or generate navmesh.")
             continue
             raise RuntimeError("Failed to load or generate navmesh.")   
-
+        episodes = convert_to_scene_objects(structured_data, filtered_episodes, pathfinder, min_distance=10, sample_all=False)
 
         with open("character_descriptions.json", "r") as f:
             id_dict = json.load(f)
@@ -199,7 +195,6 @@ if __name__ == '__main__':
                 interferer_description = id_dict[humanoid_name]["description"]
                 interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data, name = interferer_name, description = interferer_description, is_target=False)
                 all_interfering_humanoids.append(interferer)
-
     
         reset_state = simulator.agents[0].get_state()
         
@@ -210,7 +205,7 @@ if __name__ == '__main__':
             if episodes_count > max_episodes:
                 break
 
-            if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist.json"):
+            if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl"):
                 print(f"{current_scene} :  {episode_id} in blacklist")
                 continue
 
@@ -227,7 +222,7 @@ if __name__ == '__main__':
                 print("invalid black observations")
                 os.makedirs("black_obs", exist_ok=True)
                 imageio.imwrite(f'black_obs/{episode_id}.png', obs["color_0_0"])
-                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.json")
+                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
                 continue
             #
 
@@ -235,15 +230,15 @@ if __name__ == '__main__':
             human_speed = 0.7
             followed_path = generate_path_from_scene(episode_data, pathfinder, 10, human_fps, human_speed)
             if followed_path is None:
-                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.json")
+                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
                 continue
             
             print(f"Start ------------------------------ {all_index}")
             interfering_humanoids = None
             if cfg.multi_humanoids:
-                k = random.randint(1, 3) 
-                interfering_humanoids = random.sample(all_interfering_humanoids, k)
-                ##
+                # k = random.randint(1, 3) 
+                # interfering_humanoids = random.sample(all_interfering_humanoids, k)
+                interfering_humanoids = all_interfering_humanoids
                 for interfering_humanoid in interfering_humanoids:
                     sample_path = generate_interfere_sample_from_target_path(followed_path,pathfinder, 1)
                     list_pos = [[point.x,point.y,point.z] for point in sample_path]

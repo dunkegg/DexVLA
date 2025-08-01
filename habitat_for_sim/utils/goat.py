@@ -4,6 +4,7 @@ import yaml
 import math
 import os
 import numpy as np
+import habitat_sim
 def quaternion_inverse(q):
     """
     计算单位四元数 q 的逆 (w, x, y, z) -> (w, -x, -y, -z).
@@ -366,7 +367,7 @@ def calculate_euclidean_distance(point1, point2):
     return math.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(point1, point2)))
 
 
-def convert_to_scene_objects(structured_data, filtered_episodes, ogn = True):
+def convert_to_scene_objects(structured_data, filtered_episodes, pathfinder,min_distance = 5,sample_all = True):
     """
     将 structured_data 和 filtered_episodes 转换为 scene_object 列表。
     每个 episode 对应一个 scene_object，确保一对一的目标和起始点映射。
@@ -422,6 +423,24 @@ def convert_to_scene_objects(structured_data, filtered_episodes, ogn = True):
                 vp_position = vp_agent_state.get("position")
                 vp_rotation = vp_agent_state.get("rotation")
 
+                shortest_path = habitat_sim.ShortestPath()
+                shortest_path.requested_start = start_position
+                shortest_path.requested_end = vp_position
+
+                # 查找最短路径 # 模拟前沿探索过程
+                if not pathfinder.find_path(shortest_path):
+                    continue
+
+                path = shortest_path.points
+                all_distance = 0
+                for i in range(len(path)-1):
+                    distance = calculate_euclidean_distance(path[i], path[i+1])
+                    all_distance+=distance
+                
+                if all_distance < min_distance:
+                    # print(f"Skipping episode due to short distance: {all_distance}m")
+                    continue
+
                 # Create a scene_object
                 scene_object = {
                     "episode_id": episode_id,
@@ -450,7 +469,8 @@ def convert_to_scene_objects(structured_data, filtered_episodes, ogn = True):
                 }
                 
                 scene_objects.append(scene_object)
-                if not ogn:
+                if not sample_all:
                     break
-
+            if not sample_all:
+                break
     return [DotAccessDict(scene_object) for scene_object in scene_objects]
