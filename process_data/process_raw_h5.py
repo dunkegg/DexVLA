@@ -337,19 +337,42 @@ def visualize_follow_path(group: h5py.Group,
     plt.close(fig)
 
 # ----------------------------------------------------------- main --------- #
+def is_valid_image(rgb: np.ndarray, img_width: int, img_height: int, threshold: float = 0.2):
+    """判断一张图是否有效（非纯黑像素占比足够高）"""
+    num_black_pixels = np.sum(np.sum(rgb, axis=-1) == 0)
+    return num_black_pixels < threshold * img_width * img_height
+
+def check_episode_validity(obs_ds, max_check_frames=3, threshold: float = 0.2):
+    """检查前 max_check_frames 帧是否有效（大面积黑图则无效）"""
+    for i in range(min(max_check_frames, len(obs_ds))):
+        rgb = obs_ds[i]
+        height, width = rgb.shape[:2]  # 自动读取图像高宽
+        rgb3 = rgb[..., :3]  # 只取前三通道
+        num_black_pixels = np.sum(np.all(rgb3 == 0, axis=-1))
+        # num_black_pixels = np.sum(np.sum(rgb, axis=-1) == 0)
+        if num_black_pixels >= threshold * width * height:
+            return False  # 当前帧是大面积黑图
+    return True
+
+
 
 def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Path|None, hist: int):
     ep_name = src_file.stem              # episode_000 etc.
     frames_dir = frames_root/ep_name
     dst_h5    = dst_root / f"{ep_name}_proc.hdf5"
-
+    # if dst_h5.exists():
+    #     print(f"⚠️  Skip {ep_name} — already exists: {dst_h5}")
+    #     return
     with h5py.File(src_file,"r") as fin:
         obs_ds,_ = locate_obs_dataset(fin)
+        if not check_episode_validity(obs_ds):
+            print(f"❌ {src_file} 前几帧无效图像，跳过")
+            return              # 跳过该 episode
         frame_paths=[]
         for i in range(len(obs_ds)):
             png = frames_dir / f"frame_{i:06d}.png"
-            if not png.exists():
-                save_png(obs_ds[i], png)
+            # if not png.exists():
+            #     save_png(obs_ds[i], png)
             rel_path = png.as_posix()
             frame_paths.append(rel_path)
 
@@ -386,8 +409,8 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 d.create_dataset('action', data=actions, compression='gzip')
                 qposes = np.zeros_like(actions)
                 d.create_dataset('qpos', data=qposes, compression='gzip')
-                # if viz_root:
-                #     visualize_follow_path(d, actions,huamn_local, viz_root/ep_name/f"action_{obs_idx}_{type}.png")
+                if viz_root and False:
+                    visualize_follow_path(d, actions,huamn_local, viz_root/ep_name/f"action_{obs_idx}_{type}.png")
     print(f"✓ {ep_name} -> {dst_h5}")
 
 def main(src_dir: Path, frames_dir: Path, dst_dir: Path, viz_dir: Path|None, history:int):
@@ -404,13 +427,18 @@ def main(src_dir: Path, frames_dir: Path, dst_dir: Path, viz_dir: Path|None, his
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser(description="batch convert episodes")
-    ap.add_argument("src_dir", help="包含多个 episode.hdf5 的目录")
-    ap.add_argument("frames_dir", help="PNG 根目录")
-    ap.add_argument("dst_dir", help="processed h5 根目录")
-    ap.add_argument("--viz", help="可视化输出根目录")
-    ap.add_argument("--history",type=int,default=5)
+    
     args=ap.parse_args()
+    args.src_dir = "data/raw_data/raw_single_follow_data"
+    args.frames_dir ="data/frames/single_follow"
+    args.dst_dir = "data/proc_data/single_follow_temp"
 
+    args.src_dir = "data/raw_data/multi_follow_hdf5"
+    args.frames_dir ="data/frames/multi_follow"
+    args.dst_dir = "data/proc_data/multi_follow_temp"
+
+    args.viz = "results_multi/test/viz_temp"
+    args.history = 10
     viz=Path(args.viz) if args.viz else None
     main(Path(args.src_dir), Path(args.frames_dir), Path(args.dst_dir), viz, args.history)
 

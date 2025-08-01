@@ -87,7 +87,7 @@
           "--image_size_stable", "(320,240)",
           "--image_size_wrist", "(320,240)",
           "--history_images_length", "9",
-          "--task_name", "follow_hdf5",
+          "--task_name", "debug",
           "--model_name_or_path", "checkpoints/qwen2_vl",
           "--version", "v0",
           "--enable_distilbert", "False",
@@ -100,7 +100,7 @@
           "--bf16", "True",
           "--output_dir", "OUTPUT/qwen2_follow_test",
           "--max_steps", "80000",
-          "--per_device_train_batch_size", "2",
+          "--per_device_train_batch_size", "1",
           "--gradient_accumulation_steps", "1",
           "--save_strategy", "steps",
           "--save_steps", "10000",
@@ -121,7 +121,7 @@
           "--report_to", "tensorboard",
           "--logging_dir", "OUTPUT/log"
         ],
-        "python": "/wangzejin/dexvla_env/bin/python"
+        "python": "/mnt/pfs/3zpd5q/dexvla_env/bin/python"
       },
       {
         "name": "label",
@@ -206,11 +206,6 @@
 
         // 传递给脚本的 3 个参数
         "args": [
-        "${workspaceFolder}/data/raw_data/raw_single_follow_data",     // src
-        "${workspaceFolder}/data/frames/single_follow",            // out_dir
-        "${workspaceFolder}/data/proc_data/single_follow",     // dst
-        "--viz", "${workspaceFolder}/results/test/viz",               // ← 加开关
-        "--history", "10"    
         ],
 
         // 可选：使用外部终端以便查看 tqdm 进度条

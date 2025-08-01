@@ -6,55 +6,27 @@ TASK_CONFIGS = {
         'episode_len': 1000,  
         'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist'] # replacing with your real keys in h5py formatted data
     },
-    'nav_debug': { # for nav
-        'dataset_dir': [
-            "data/debug"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'nav_xy_tasks': { # for nav
-        'dataset_dir': [
-            "data/vln_xy2"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'follow_test': { # for nav
-        'dataset_dir': [
-            "data/follow_data/train_test"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'follow_zarr': { # for nav
-        'dataset_dir': [
-            "data/follow_data/train_zarr"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'follow_zarr2': { # for nav
-        'dataset_dir': [
-            "data/follow_data/train_zarr2"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
     'follow_hdf5': { # for nav
         'dataset_dir': [
-            "data/follow_data/train_hdf5/train_hdf5"
+            "data/split_data/single_follow"
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     },
-    'follow_hdf5_2': { # for nav
+    'multi_follow': { # for nav
         'dataset_dir': [
-            "data/follow_data/train_hdf5_2"
+            "data/split_data/multi_follow"
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    }
+    },
+    'debug': { # for nav
+        'dataset_dir': [
+            "data/debug_data"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
 }
 
 ### ALOHA fixed constants
