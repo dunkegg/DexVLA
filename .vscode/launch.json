@@ -177,7 +177,9 @@
         "env": {
           "CUDA_VISIBLE_DEVICES": "0",       
         },
-        "args": [],
+        "args": [
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
+        ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
       {
@@ -213,6 +215,20 @@
 
         // 可选：使用外部终端以便查看 tqdm 进度条
         "console": "integratedTerminal",
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
+      },
+      {
+        "name": "watch_dog_eval",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/watch_dog.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "1",       
+        },
+        "args": [],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
     ]

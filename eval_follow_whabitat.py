@@ -10,7 +10,8 @@ from tqdm import tqdm
 import habitat_sim
 from habitat_sim.utils import viz_utils as vut
 print(habitat_sim.__file__)
-
+import argparse
+import imageio
 from habitat_for_sim.utils.goat import read_yaml, extract_dict_from_folder, get_current_scene, process_episodes_and_goals, convert_to_scene_objects, find_scene_path, calculate_euclidean_distance
 from habitat_for_sim.agent.path_generator import generate_path
 from habitat_for_sim.utils.frontier_exploration import FrontierExploration
@@ -31,12 +32,44 @@ from habitat_for_sim.utils.explore.explore_habitat import (
 from evaluate_dexvln.robot import FakeRobotEnv, qwen2_vla_policy
 from evaluate_dexvln.record import create_log_json, append_log
 
+
+def make_key(scene: str, idx: int) -> str:
+    return f"{scene}_{idx}"
+
+def add_to_blacklist(scene: str, idx: int, blacklist_path: str):
+    key = make_key(scene, idx)
+
+    # 如果文件存在就读取，否则新建
+    if os.path.exists(blacklist_path):
+        with open(blacklist_path, 'r') as f:
+            blacklist = json.load(f)
+    else:
+        blacklist = {}
+
+    blacklist[key] = True
+
+    with open(blacklist_path, 'w') as f:
+        json.dump(blacklist, f, indent=2)
+    print(f"✅ 已加入黑名单: {key}")
+
+def is_in_blacklist(scene: str, idx: int, blacklist_path: str) -> bool:
+    key = make_key(scene, idx)
+
+    if not os.path.exists(blacklist_path):
+        return False
+
+    with open(blacklist_path, 'r') as f:
+        blacklist = json.load(f)
+
+    return key in blacklist
+
 def time_ms():
     return time.time_ns() // 1_000_000
 
 import re
 
 def get_max_episode_number(root_dir):
+    os.makedirs(root_dir, exist_ok=True)
     max_num = -1
     for name in os.listdir(root_dir):
         if os.path.isdir(os.path.join(root_dir, name)):
@@ -61,9 +94,12 @@ def check_episode_validity(obs_ds, threshold: float = 0.3):
     return True
 
 if __name__ == '__main__':
-    
-    yaml_file_path = "habitat_for_sim/cfg/exp_eval.yaml"
-    cfg = read_yaml(yaml_file_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--yaml_file_path', type=str, required=True,
+                        help='Path to the YAML config file')
+    args = parser.parse_args()
+
+    cfg = read_yaml(args.yaml_file_path)
     json_data = cfg.json_file_path
     img_output_dir = cfg.img_output_dir
     video_output_dir = cfg.video_output_dir
@@ -108,17 +144,17 @@ if __name__ == '__main__':
     all_index = 0
     success_count = 0
     episodes_count = 0
-    jump_idx = get_max_episode_number(img_output_dir)
-    for file_name, content in data.items():
+    jump_idx = get_max_episode_number(img_output_dir)+1
+    for file_name, content in sorted(data.items()):
         if episodes_count > max_episodes:
             break
         if all_index < jump_idx:
             all_index += 1
             continue  
         structured_data,  filtered_episodes = process_episodes_and_goals(content)
-        episodes = convert_to_scene_objects(structured_data, filtered_episodes)
+        episodes = convert_to_scene_objects(structured_data, filtered_episodes, ogn=False)
                 
-        cfg.current_scene = get_current_scene(structured_data)
+        cfg.current_scene = current_scene = get_current_scene(structured_data)
         
         # Set up scene in Habitat
         try:
@@ -144,12 +180,15 @@ if __name__ == '__main__':
         # folders = [f"female_{i}" for i in range(35)] + [f"male_{i}" for i in range(65)]
         # humanoid_name = folders[all_index]
 
-        humanoid_name = get_humanoid_id(id_dict, name_exception=None) 
-        humanoid_name = "female_0"
         
+        humanoid_name = get_humanoid_id(id_dict, name_exception=None) 
+        follow_description = id_dict[humanoid_name]["description"]
+        if not cfg.multi_humanoids:
+            humanoid_name = "female_0"
+            follow_description = None
         # 原主目标人
-        description = id_dict[humanoid_name]["description"]
-        target_humanoid = AgentHumanoid(simulator,base_pos=mn.Vector3(0, 0.083, 0), base_yaw = 0,name = humanoid_name,description = description, is_target=True)
+        
+        target_humanoid = AgentHumanoid(simulator,base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data ,name = humanoid_name,description = follow_description, is_target=True)
         
         all_interfering_humanoids = []
         if cfg.multi_humanoids:
@@ -158,7 +197,7 @@ if __name__ == '__main__':
                 # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
                 interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
                 interferer_description = id_dict[humanoid_name]["description"]
-                interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(0, 0.083, 0), base_yaw = 0, name = interferer_name, description = interferer_description, is_target=False)
+                interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data, name = interferer_name, description = interferer_description, is_target=False)
                 all_interfering_humanoids.append(interferer)
 
     
@@ -166,21 +205,40 @@ if __name__ == '__main__':
         
 
         print("begin")
-        for episode_id, episode_data in enumerate(tqdm(episodes)):
+        for episode_idx, episode_data in enumerate(tqdm(episodes)):
+            episode_id = episode_data["episode_id"]
             if episodes_count > max_episodes:
                 break
+
+            if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist.json"):
+                print(f"{current_scene} :  {episode_id} in blacklist")
+                continue
 
             if all_index < jump_idx:
                 all_index += 1
                 continue  
 
+            simulator.agents[0].set_state(reset_state)
+            obs = simulator.get_sensor_observations(0)['color_0_0']
+            black_threshold = 0.3
+            # if cfg.multi_humanoids:
+            #     black_threshold = 0.1
+            if not check_episode_validity(obs, threshold=black_threshold):
+                print("invalid black observations")
+                os.makedirs("black_obs", exist_ok=True)
+                imageio.imwrite(f'black_obs/{episode_id}.png', obs["color_0_0"])
+                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.json")
+                continue
+            #
+
             human_fps = 10
             human_speed = 0.7
             followed_path = generate_path_from_scene(episode_data, pathfinder, 10, human_fps, human_speed)
             if followed_path is None:
+                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.json")
                 continue
             
-            #
+            print(f"Start ------------------------------ {all_index}")
             interfering_humanoids = None
             if cfg.multi_humanoids:
                 k = random.randint(1, 3) 
@@ -193,12 +251,8 @@ if __name__ == '__main__':
                     interfering_path = get_path_with_time(interfering_path, time_step=1/human_fps, speed=0.9)
                     interfering_humanoid.reset_path(interfering_path)
                 
-            simulator.agents[0].set_state(reset_state)
-            obs = simulator.get_sensor_observations(0)['color_0_0']
-            if not check_episode_validity(obs, threshold=0.3):
-                print("invalid black observations")
-                continue
-            agilex_bot.reset(simulator.agents[0],n_frames=8)
+
+            agilex_bot.reset(simulator.agents[0],n_frames=8, human_description=follow_description)
             try:
                 output_data = walk_along_path_multi(
                     all_index=all_index,
@@ -218,16 +272,16 @@ if __name__ == '__main__':
                 print(e)
                 continue
 
-            if all_index < 200:
-                video_output = video_output_dir
-                os.makedirs(video_output, exist_ok=True)
-                vut.make_video(
-                    output_data["obs"],
-                    "color_0_0",
-                    "color",
-                    f"{video_output}/humanoid_wrapper_{all_index}",
-                    open_vid=False,
-                )
+            
+            video_output = video_output_dir
+            os.makedirs(video_output, exist_ok=True)
+            vut.make_video(
+                output_data["obs"],
+                "color_0_0",
+                "color",
+                f"{video_output}/humanoid_wrapper_{all_index}",
+                open_vid=False,
+            )
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
             all_index+=1
 

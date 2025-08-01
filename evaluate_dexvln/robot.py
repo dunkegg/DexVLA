@@ -150,7 +150,7 @@ class FakeRobotEnv():
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
-    def reset(self, agent, n_frames):
+    def reset(self, agent, n_frames, human_description):
         print("Reset to home position.")
         self.agent = agent
         self.history_obs = []
@@ -169,6 +169,8 @@ class FakeRobotEnv():
         # self.plot_dir = self.plot_dir + f"{n_frames}"
 
         raw_lang ="follow the human"
+        if human_description:
+            raw_lang = "follow :" + human_description
         self.instruction = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
 
     def set_episode_id(self, episode_id):

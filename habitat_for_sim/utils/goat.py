@@ -366,7 +366,7 @@ def calculate_euclidean_distance(point1, point2):
     return math.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(point1, point2)))
 
 
-def convert_to_scene_objects(structured_data, filtered_episodes):
+def convert_to_scene_objects(structured_data, filtered_episodes, ogn = True):
     """
     将 structured_data 和 filtered_episodes 转换为 scene_object 列表。
     每个 episode 对应一个 scene_object，确保一对一的目标和起始点映射。
@@ -450,5 +450,7 @@ def convert_to_scene_objects(structured_data, filtered_episodes):
                 }
                 
                 scene_objects.append(scene_object)
+                if not ogn:
+                    break
 
     return [DotAccessDict(scene_object) for scene_object in scene_objects]

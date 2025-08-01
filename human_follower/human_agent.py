@@ -41,7 +41,7 @@ def get_humanoid_id(id_dict, name_exception=None):
     return humanoid_name
 
 class AgentHumanoid:
-    def __init__(self, sim, base_pos, base_yaw, name, description, is_target=False):
+    def __init__(self, sim, base_pos, base_yaw, human_data_root , name, description, is_target=False):
         self.sim = sim
         self.is_target = is_target
         self.humanoid = None
@@ -50,6 +50,7 @@ class AgentHumanoid:
         self.name = name
         self.tag  = None
         self.desc = None
+        self.human_data_root = human_data_root
         self.reset(base_pos,base_yaw,name,description)
 
     def reset(self, base_pos, base_yaw ,name, description):
@@ -100,7 +101,7 @@ class AgentHumanoid:
             print(f"移除人形对象时出错：{e}")
 
     def _load_humanoid(self, sim, humanoid_name,motion_path=None):
-        data_root = "human_follower/habitat_humanoids"
+        data_root = self.human_data_root
         # data_root = "human_follower/humanoid_data"
         urdf_path = f"{data_root}/{humanoid_name}/{humanoid_name}.urdf"
         motion_pkl = motion_path or f"{data_root}/{humanoid_name}/{humanoid_name}_motion_data_smplx.pkl"
