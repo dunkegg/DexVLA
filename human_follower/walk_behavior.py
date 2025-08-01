@@ -476,7 +476,7 @@ def walk_along_path_multi(
             output["plan_fps"] = plan_fps
             output["follow_size"] = follow_size
             # step_fps = 0.4
-            output
+            
             if now - last_sample_time >= 1/sample_fps:
                 last_sample_time = now
                 obs = sim.get_sensor_observations(0)
@@ -501,7 +501,7 @@ def walk_along_path_multi(
                     robot.save_obs(now, position)
                     robot.compare_step(follow_size, forward_speed/plan_fps)
                 
-                if calculate_euclidean_distance(position, goal_pos) < 2:
+                if calculate_euclidean_distance(robot.get_state().position, goal_pos) < 2:
                     follow_success = True
 
 
