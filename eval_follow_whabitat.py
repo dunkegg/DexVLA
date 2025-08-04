@@ -53,11 +53,16 @@ def is_in_blacklist(scene: str, idx: int, blacklist_path: str) -> bool:
         return False
 
     with open(blacklist_path, 'r') as f:
+        episode_count = 0
         for line in f:
             try:
                 entry = json.loads(line.strip())
                 if entry.get("key") == key:
                     return True
+                if episode_count > 10:
+                    return True
+                if scene in entry.get("key"):
+                    episode_count +=1
             except json.JSONDecodeError:
                 continue
     return False
@@ -188,11 +193,12 @@ if __name__ == '__main__':
         
         all_interfering_humanoids = []
         if cfg.multi_humanoids:
-            for idx in range(3):
-                # break
-                # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
-                interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
-                interferer_description = id_dict[humanoid_name]["description"]
+            # for idx in range(3):
+            #     # break
+            #     # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
+            #     interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
+            for interferer_name in ["female_2", "female_3"]:
+                interferer_description = id_dict[interferer_name]["description"]
                 interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data, name = interferer_name, description = interferer_description, is_target=False)
                 all_interfering_humanoids.append(interferer)
     
@@ -221,7 +227,7 @@ if __name__ == '__main__':
             if not check_episode_validity(obs, threshold=black_threshold):
                 print("invalid black observations")
                 os.makedirs("black_obs", exist_ok=True)
-                imageio.imwrite(f'black_obs/{episode_id}.png', obs["color_0_0"])
+                imageio.imwrite(f'black_obs/{episode_id}.png', obs)
                 add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
                 continue
             #
