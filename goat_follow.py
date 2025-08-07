@@ -134,6 +134,7 @@ if __name__ == '__main__':
     success_count = 0
     episodes_count = 0
     jump_idx = get_max_episode_number(img_output_dir)+1
+    jump_idx = 25
     for file_name, content in sorted(data.items()):
         if episodes_count > max_episodes:
             break
@@ -167,12 +168,9 @@ if __name__ == '__main__':
         # folders = [f"female_{i}" for i in range(35)] + [f"male_{i}" for i in range(65)]
         # humanoid_name = folders[all_index]
 
-        
-        humanoid_name = get_humanoid_id(id_dict, name_exception=None) 
+    
+        humanoid_name = "female_0"
         follow_description = id_dict[humanoid_name]["description"]
-        if not cfg.multi_humanoids:
-            humanoid_name = "female_0"
-            follow_description = None
         # 原主目标人
         
         target_humanoid = AgentHumanoid(simulator,base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data ,name = humanoid_name,description = follow_description, is_target=True)
@@ -239,34 +237,36 @@ if __name__ == '__main__':
                     interfering_humanoid.reset_path(interfering_path)
                 
 
-            try:
-                output_data = walk_along_path_multi(
-                    all_index=all_index,
-                    sim=simulator,
-                    humanoid_agent=target_humanoid,
-                    human_path=followed_path,
-                    fps=10,
-                    forward_speed=human_speed,
-                    timestep_gap = 1/human_fps, 
-                    interfering_humanoids=interfering_humanoids,
-                    robot = agilex_bot
-                )
+            # try:
+            output_data = walk_along_path_multi(
+                all_index=all_index,
+                sim=simulator,
+                humanoid_agent=target_humanoid,
+                human_path=followed_path,
+                fps=10,
+                forward_speed=human_speed,
+                timestep_gap = 1/human_fps, 
+                interfering_humanoids=interfering_humanoids,
+                robot = agilex_bot
+            )
 
-            except Exception as e:
-                print(e)
-                continue
+            # except Exception as e:
+            #     print(e)
+            #     continue
 
             save_output_to_h5(output_data, f"data/raw_data/multi_follow_hdf5/episode_{all_index}.hdf5")
-            video_output = video_output_dir
-            os.makedirs(video_output, exist_ok=True)
-            vut.make_video(
-                output_data["obs"],
-                "color_0_0",
-                "color",
-                f"{video_output}/humanoid_wrapper_{all_index}",
-                open_vid=False,
-            )
+            if all_index < 50:
+                video_output = video_output_dir
+                os.makedirs(video_output, exist_ok=True)
+                vut.make_video(
+                    output_data["obs"],
+                    "color_0_0",
+                    "color",
+                    f"{video_output}/humanoid_wrapper_{all_index}",
+                    open_vid=False,
+                )
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
+            episodes_count+=len(output_data["follow_paths"])
             all_index+=1
 
             print(f"Success Rate: {success_count/all_index}")
