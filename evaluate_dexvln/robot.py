@@ -124,7 +124,40 @@ class qwen2_vla_policy:
         for k, v in model_inputs.items():
             data_dict[k] = v
         return data_dict
+    
+def smooth_quat(actions, window_size=3):
+    height = actions[0][0][1]
+    yaw_smooth = []
+    for pos, quat in actions:
+        yaw, _ = quat_to_angle_axis(quat)
+        yaw_smooth.append((np.array(pos), yaw))
+    new_smooth = np.array([np.array([pos[0], pos[2], yaw]) for pos, yaw in yaw_smooth])
+    new_smooth = smooth_yaw(new_smooth, window_size)
+    quat_smooth = []
+    for s in new_smooth:
+        quat_smooth.append([to_vec3([s[0],height ,s[1]]), quat_from_angle_axis(s[2], np.array([0, 1, 0]))])
+    return quat_smooth
 
+def smooth_yaw(actions, window_size=3):
+    if len(actions) < window_size:
+        return actions
+    
+    yaw_actions = []
+    for action in actions:
+        yaw_actions.append((action[:2], action[2]))
+    
+    smoothed_actions = []
+    for i in range(len(yaw_actions)):
+        start = max(0, i - window_size // 2)
+        end = min(len(yaw_actions), i + window_size // 2 + 1)
+        window = yaw_actions[start:end]
+
+        avg_pos = sum([a[0] for a in window]) / len(window)
+        avg_yaw = sum([a[1] for a in window]) / len(window)
+        smoothed_actions.append((avg_pos, avg_yaw))
+    
+    final = np.array([np.array([pos[0], pos[1], yaw]) for pos, yaw in smoothed_actions])
+    return final
 
 
 class FakeRobotEnv():
@@ -146,7 +179,7 @@ class FakeRobotEnv():
         self.episode_id = None
         self.plot_dir = plot_dir
         
-
+        self.smooth_window_size = 3
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
@@ -233,8 +266,16 @@ class FakeRobotEnv():
         # human_position[0] = human_position[0]
         # human_position[2] = -human_position[2]
         plot_world = np.concatenate([self.world_actions[:, :1], self.world_actions[:, 2:]], axis=1)
-        world_img_np = plot_obs(time, plot_world, "follow the human", cur_image,human_position)
-        local_img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,local_human_position)
+        
+        #smooth
+        # world_actions_xy = np.concatenate([self.world_actions[:, :1], self.world_actions[:, 2:]], axis=1)
+        # world_actions_xy_smooth = smooth_np(world_actions_xy) 
+        
+        local_actions_smooth = smooth_yaw(self.local_actions, self.smooth_window_size)
+
+        # world_img_np = plot_obs(time, plot_world, "follow the human", cur_image,human_position)
+        local_img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,local_human_position, smooth_actions=local_actions_smooth)
+
         plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}")
         os.makedirs(plot_dir, exist_ok=True)
         imageio.imwrite(f'{plot_dir}/{round(time, 1)}_local.png', local_img_np)
@@ -290,7 +331,6 @@ class FakeRobotEnv():
         else:
             self.set_state(cur_action[0], quaternion)
 
-
     def compare_step(self, comp_size, distance):
         
         if self.step_idx + comp_size > len(self.step_actions) - 1:
@@ -299,14 +339,28 @@ class FakeRobotEnv():
             while len(self.action_queue) > 18:
                 self.step_actions.append(self.action_queue.popleft())
 
+            # self.step_actions = smooth_quat(self.step_actions)
+
+
         else:
             new_actions = []
             while len(self.action_queue) > 18:
                 new_actions.append(self.action_queue.popleft())
-            
+            #smooth
+
             origin_future_steps = self.step_actions[self.step_idx:self.step_idx+comp_size]
+            origin_smooth = smooth_quat(origin_future_steps, self.smooth_window_size)
+
             new_future_steps = new_actions[0:comp_size]
+            new_smooth = smooth_quat(new_future_steps, self.smooth_window_size)
             changed = False
+            # for (p1, y1), (p2, y2) in zip(origin_smooth, new_smooth):
+            #     pos_diff = np.linalg.norm(p1 - p2)
+            #     yaw_diff = abs(shortest_angle_diff(y1, y2))
+            #     if pos_diff > 0.2 or yaw_diff > 0.2:
+            #         changed = True
+            #         break
+            # changed = False
             if changed:
                 self.step_actions = new_actions
                 self.step_idx = 0

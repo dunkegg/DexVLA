@@ -39,6 +39,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot
-video_output_dir: results_eval
-log_path: logs/log_2025-07-31_17-17-17.json
+img_output_dir: eval_plot_rr
+video_output_dir: results_eval_rr
+log_path: null

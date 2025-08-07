@@ -103,7 +103,7 @@ def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, fr
     print(f"✅ Saved: {save_path}")
 
 
-def plot_obs(time,predicted_actions,raw_lang, obs,human_position, target_actions = None):
+def plot_obs(time,predicted_actions ,raw_lang, obs,human_position, target_actions = None, smooth_actions = None):
     # for idx, img in enumerate(frames):
     #     out_path = os.path.join(output_dir, f"case_{i}_frame_{idx:04d}.png")  # 命名格式: frame_0000.png
     #     cv2.imwrite(out_path, img)
@@ -112,6 +112,7 @@ def plot_obs(time,predicted_actions,raw_lang, obs,human_position, target_actions
     # 颜色设置
     pred_color = 'tab:blue'
     target_color = 'tab:red'
+    smooth_color = 'tab:green'
 
     # 遍历每个 batch
     # for i in range(predicted_actions.shape[0]):
@@ -153,6 +154,10 @@ def plot_obs(time,predicted_actions,raw_lang, obs,human_position, target_actions
     ax_xy.plot(pred[:12, 0], pred[:12, 1], color='yellow', label='Early Steps (0~11)', linewidth=2)
     if target_actions is not None:
         ax_xy.plot(target_actions[:, 0], target_actions[:, 1], color=target_color, label='Target XY')
+    if smooth_actions is not None:
+        base = smooth_actions[0, :2]
+        smooth_xy = smooth_actions[:, :2] - base
+        ax_xy.plot(smooth_xy[:, 0], smooth_xy[:, 1], color=smooth_color, label='Smooth XY')
     if human_position is not None:
         ax_xy.scatter(human_position[0], human_position[2], color='red', s=50, label='End Point')
         
@@ -166,7 +171,7 @@ def plot_obs(time,predicted_actions,raw_lang, obs,human_position, target_actions
     # 设置 XY 统一视角范围
     x_all = pred[:, 0]
     y_all = pred[:, 1]
-    max_range = 8
+    max_range = 3
     x_center = (x_all.max() + x_all.min()) / 2
     y_center = (y_all.max() + y_all.min()) / 2
     ax_xy.set_xlim(x_center - max_range / 2, x_center + max_range / 2)
