@@ -27,6 +27,20 @@ TASK_CONFIGS = {
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     },
+    'real_finetue': { # for nav
+        'dataset_dir': [
+            "data/split_data/single_new"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'mirror_single': { # for nav
+        'dataset_dir': [
+            "data/split_data/mirror_sum"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
 }
 
 ### ALOHA fixed constants

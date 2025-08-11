@@ -163,7 +163,7 @@ humanoid_data
 a_plot_analysis/
 eval_plot*
 results*
-
+plots/
 # Pyre type checker
 .pyre/
 

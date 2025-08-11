@@ -87,7 +87,7 @@
           "--image_size_stable", "(320,240)",
           "--image_size_wrist", "(320,240)",
           "--history_images_length", "9",
-          "--task_name", "debug",
+          "--task_name", "mirror_single",
           "--model_name_or_path", "checkpoints/qwen2_vl",
           "--version", "v0",
           "--enable_distilbert", "False",
