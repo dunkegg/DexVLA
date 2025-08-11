@@ -2,13 +2,13 @@
 seed: 42
 exp_name: view_sample
 
-scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
-json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
+scenes_data_path: /home/wangzejin/habitat/goat_bench/data/scene_datasets/hm3d/train
+json_file_path: /home/wangzejin/habitat/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 human_data: human_follower/humanoid_data
 model_path: OUTPUT/multi_follow_normal/checkpoint-5000
 
 
-max_episodes: 1000
+max_episodes: 50000
 multi_humanoids: true
 
 # Camera, image

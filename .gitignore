@@ -162,6 +162,7 @@ evaluate/plot_action*
 humanoid_data
 a_plot_analysis/
 eval_plot*
+eval_real*
 results*
 plots/
 # Pyre type checker

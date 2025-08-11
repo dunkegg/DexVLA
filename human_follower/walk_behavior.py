@@ -274,7 +274,8 @@ def generate_interfer_path(interfering_humanoids, human_path, time_step=1/10, sp
         )
         interferer.reset_path(path)
 
-def sample_data(sim, human_path,goal_pos,time_step, humanoid_agent, observations, output, follow_timestep,follow_state):
+def sample_data(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, observations, output, follow_timestep,follow_state):
+
     keep_distance = 0.7
     sample_list = [random.uniform(1, 1.5), random.uniform(1.5, 2),random.uniform(2, 2.5),random.uniform(2.5, 3.5), random.uniform(3, 3.5),random.uniform(3.5, 4)]
     long_follow_range = random.uniform(4, 5)
@@ -371,7 +372,7 @@ def sample_data(sim, human_path,goal_pos,time_step, humanoid_agent, observations
             
             output["follow_paths"].append(follow_data)
     
-    return output, observations, follow_timestep, follow_state
+    return output, observations, follow_timestep, follow_state, move_dis
 
 def walk_along_path_multi(
     all_index,
@@ -409,7 +410,8 @@ def walk_along_path_multi(
 
 
     now = 0
-    robot.set_obs(obs['color_0_0'], now, save=True)
+    if robot is not None:
+        robot.set_obs(obs['color_0_0'], now, save=True)
 
     follow_timestep = 0
 
@@ -461,8 +463,8 @@ def walk_along_path_multi(
         # 更新物理引擎
         sim.step_physics(1.0 / fps)
         if robot is None:
-            output, observations, follow_timestep, follow_state = sample_data(sim=sim, human_path = human_path,
-                                                                            goal_pos = goal_pos, time_step = time_step, humanoid_agent = humanoid_agent, 
+            output, observations, follow_timestep, follow_state, move_dis = sample_data(sim=sim, human_path = human_path,
+                                                                            goal_pos = goal_pos, time_step = time_step, move_dis = move_dis,humanoid_agent = humanoid_agent, 
                                                                             observations = observations, output = output, follow_timestep = follow_timestep,follow_state = follow_state)
         else:
             now = timestep_gap * time_step
