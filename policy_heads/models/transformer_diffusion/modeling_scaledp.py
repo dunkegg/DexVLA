@@ -492,17 +492,17 @@ class ScaleDP(PreTrainedModel):
             # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
             timesteps = self.noise_scheduler.timesteps.tolist()
 #----------------------------------------------------------------------------------------------------------
-            # 找到10的位置
-            if 10 in timesteps and 0 in timesteps:
-                idx_10 = timesteps.index(10)
-                idx_0 = timesteps.index(0)
+            # # 找到10的位置
+            # if 10 in timesteps and 0 in timesteps:
+            #     idx_10 = timesteps.index(10)
+            #     idx_0 = timesteps.index(0)
 
-                # 替换 [10, 0] 为细化版本
-                refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
-                timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+            #     # 替换 [10, 0] 为细化版本
+            #     refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+            #     timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
 
-                # 更新 scheduler
-                self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+            # 更新 scheduler
+            self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
 #----------------------------------------------------------------------------------------------------------
 
             for k in self.noise_scheduler.timesteps:

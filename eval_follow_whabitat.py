@@ -253,7 +253,7 @@ if __name__ == '__main__':
                     interfering_humanoid.reset_path(interfering_path)
                 
 
-            agilex_bot.reset(simulator.agents[0],n_frames=8, human_description=follow_description)
+            agilex_bot.reset(simulator.agents[0],n_frames=10, human_description=follow_description)
             # try:
             output_data = walk_along_path_multi(
                 all_index=all_index,

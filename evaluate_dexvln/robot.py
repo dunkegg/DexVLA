@@ -366,7 +366,7 @@ class FakeRobotEnv():
                 self.step_idx = 0
             else:
                 move_dis = 0
-                for i in range(self.step_idx, len(self.step_actions)):
+                for i in range(self.step_idx, len(self.step_actions)-1):
                     if move_dis > distance:
                         self.step_idx = i
                         break
