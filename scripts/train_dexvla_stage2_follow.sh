@@ -11,10 +11,10 @@ DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
 MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 TASKNAME=mirror_single
 
-OUTPUT=OUTPUT/qwen2_follow_mirror
+OUTPUT=OUTPUT/qwen2_new_follow_v_prediction
 
 
-deepspeed --master_port 29604 --include=localhost:0,1,2 ./train_vla.py \
+deepspeed --master_port 29605 --include=localhost:0,1,2,3 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning False \
   --lora_enable False \
@@ -41,11 +41,11 @@ deepspeed --master_port 29604 --include=localhost:0,1,2 ./train_vla.py \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 26000 \
+  --max_steps 30000 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 13000 \
+  --save_steps 10000 \
   --save_total_limit 50 \
   --learning_rate 2e-5 \
   --weight_decay 0. \

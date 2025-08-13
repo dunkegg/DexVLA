@@ -98,7 +98,7 @@
           "--mm_use_im_patch_token", "False",
           "--image_aspect_ratio", "pad",
           "--bf16", "True",
-          "--output_dir", "OUTPUT/multi_follow_normal",
+          "--output_dir", "OUTPUT/debug",
           "--max_steps", "80000",
           "--per_device_train_batch_size", "1",
           "--gradient_accumulation_steps", "1",
