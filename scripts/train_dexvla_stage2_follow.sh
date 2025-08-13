@@ -9,12 +9,12 @@ ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
 DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
 MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
-TASKNAME=follow_hdf5
+TASKNAME=mirror_single
 
-OUTPUT=OUTPUT/qwen2_follow_test
+OUTPUT=OUTPUT/qwen2_new_follow_v_prediction
 
 
-deepspeed --master_port 29604 --include=localhost:0,1,2,3 ./train_vla.py \
+deepspeed --master_port 29605 --include=localhost:0,1,2,3 ./train_vla.py \
   --deepspeed scripts/zero2.json \
   --use_reasoning False \
   --lora_enable False \
@@ -41,8 +41,8 @@ deepspeed --master_port 29604 --include=localhost:0,1,2,3 ./train_vla.py \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 80000 \
-  --per_device_train_batch_size 2 \
+  --max_steps 30000 \
+  --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
   --save_steps 10000 \

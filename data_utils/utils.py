@@ -45,6 +45,55 @@ def safe_zarr_open(path, timeout=5):
     return result
 def flatten_list(l):
     return [item for sublist in l for item in sublist]
+
+import matplotlib.pyplot as plt
+
+def plot_actions_and_save_frames(raw_lang, action, frames, save_dir):
+    """
+    绘制动作轨迹和 yaw，并保存图像帧
+    
+    参数:
+        raw_lang (str): 任务说明
+        action (np.ndarray): 动作轨迹数组 [T, D]，至少有三个维度 (x, y, yaw)
+        frames (list[np.ndarray]): 图像帧列表
+        save_dir (str): 保存目录
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    if action.shape[1] < 3:
+        raise ValueError("Action must have at least three dimensions for plotting (x, y, yaw).")
+
+    # === 1. 绘制轨迹和 yaw ===
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+
+    # XY 轨迹
+    axs[0].plot(action[:, 0], action[:, 1], marker='o', markersize=3, linewidth=1)
+    axs[0].set_title("XY Trajectory", fontsize=10)
+    axs[0].set_xlabel("X")
+    axs[0].set_ylabel("Y")
+    axs[0].grid(True)
+    axs[0].axis('equal')
+
+    # yaw 曲线
+    timesteps = np.arange(len(action))
+    axs[1].plot(timesteps, action[:, 2], marker='o', markersize=3, linewidth=1, color='orange')
+    axs[1].set_title("Yaw over Time", fontsize=10)
+    axs[1].set_xlabel("Timestep")
+    axs[1].set_ylabel("Yaw (rad)")
+    axs[1].grid(True)
+
+    fig.suptitle(raw_lang, fontsize=12, wrap=True)
+    traj_path = os.path.join(save_dir, "trajectory_yaw.png")
+    plt.tight_layout()
+    plt.savefig(traj_path, dpi=300)
+    plt.close()
+    print(f"✅ 动作轨迹 + Yaw 已保存: {traj_path}")
+
+    # === 2. 保存图像帧 ===
+    for i, frame in enumerate(frames):
+        frame_path = os.path.join(save_dir, f"frame_{i:03d}.png")
+        cv2.imwrite(frame_path, frame)
+    print(f"✅ 共保存 {len(frames)} 张帧图像到: {save_dir}")
 import gc
 class EpisodicDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path_list, camera_names, norm_stats, episode_ids, episode_len, chunk_size, policy_class, robot=None, rank0_print=print, llava_pythia_process=None, data_args=None):
@@ -119,91 +168,6 @@ class EpisodicDataset(torch.utils.data.Dataset):
             with h5py.File(dataset_path, 'r') as root:
                 return self._load_from_h5_internal(root, dataset_path, start_ts)
 
-        try:
-            is_sim = get_attr("sim", False)
-        except:
-            is_sim = False
-
-        compressed = get_attr("compress", False)
-        if "truncate" in dataset_path:
-            compressed = False
-
-        try:
-            raw_lang = get_item("language_raw")
-            if isinstance(raw_lang, bytes):
-                raw_lang = raw_lang.decode("utf-8")
-        except Exception as e:
-            self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
-            exit(0)
-
-        if self.data_args.use_reasoning:
-            if "substep_reasonings" in root:
-                reasoning = root["substep_reasonings"][start_ts]
-            else:
-                try:
-                    reasoning = root["reasoning"][0]
-                except Exception as e:
-                    self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
-                    exit(0)
-            if isinstance(reasoning, bytes):
-                reasoning = reasoning.decode("utf-8")
-
-        action = get_item("/action")
-        original_action_shape = action.shape
-        episode_len = original_action_shape[0]
-
-        qpos = root["/observations/qpos"][start_ts]
-        # qvel = root["/observations/qvel"][start_ts]
-        qvel = root["/observations/qpos"][start_ts]
-
-        image_dict = dict()
-        # video_dict = dict()
-        n_frames = self.data_args.history_images_length
-
-        cam_name = self.camera_names[0]
-
-        image_seq = root[f'/observations/images/{cam_name}'][()]
-        history_image_seq = root[f'/observations/history_images'][()]
-
-        frames = []
-
-
-        assert n_frames<=len(history_image_seq)
-
-        # if n_frames >= len(history_image_seq):  # 临时
-        #     history_image_seq[0] = history_image_seq[1]
-        #     if n_frames > len(history_image_seq):
-        #         history_image_seq = [history_image_seq[0]] * (n_frames - len(history_image_seq)) + history_image_seq
-        rank = int(os.environ.get("RANK", 0))
-
-        for img_path in history_image_seq[-n_frames:]:
-            # img_path = img_path.replace("code/", f"code/train/")
-            img = cv2.imread(img_path)
-            if compressed:
-                img = cv2.imdecode(img, 1)
-            img = cv2.resize(img,  eval(self.data_args.image_size_stable))
-            frames.append(img)
-
-        img_path = img_path = image_seq
-        # img_path = img_path.replace("code/", f"code/train/")
-        img = cv2.imread(img_path)
-        img = cv2.resize(img,  eval(self.data_args.image_size_stable))
-        frames.append(img)
-
-
-        # 存储单帧图像（最后一帧）
-        image_dict[cam_name] = frames
-
-
-
-        if is_sim:
-            action = action[start_ts:]
-            action_len = episode_len - start_ts
-        else:
-            action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
-            action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
-
-        return original_action_shape, action, action_len, image_dict, frames, qpos, qvel, raw_lang, reasoning
 
     def _load_from_h5_internal(self,root, dataset_path, start_ts):
         start_ts = 0
@@ -218,6 +182,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         try:
             raw_lang = root['language_raw'][()].decode('utf-8')
             #wzj
+            old_raw_lang = raw_lang
             raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
             # instruction = root['instruction'][()].decode('utf-8')
         except Exception as e:
@@ -249,7 +214,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         cam_name = self.camera_names[0]
 
-        image_seq = root[f'/observations/images/{cam_name}'][()]
+        obs_img = root[f'/observations/images/{cam_name}'][()]
         history_image_seq = root[f'/observations/history_images'][()]
 
         frames = []
@@ -257,12 +222,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         assert n_frames<=len(history_image_seq)
 
-        # if n_frames >= len(history_image_seq):  # 临时
-        #     history_image_seq[0] = history_image_seq[1]
-        #     if n_frames > len(history_image_seq):
-        #         history_image_seq = [history_image_seq[0]] * (n_frames - len(history_image_seq)) + history_image_seq
-
-        # test test test
+        mirror = root.attrs.get("tag", "") == "mirror"
 
         # batch_size = 2
         # # if self.same_type_count == batch_size:
@@ -284,17 +244,23 @@ class EpisodicDataset(torch.utils.data.Dataset):
             img_path = path_bytes.decode('utf-8')
             # img_path = img_path.replace("code/", f"code/train/")
             img = cv2.imread(img_path)
+            if mirror:
+                img = cv2.flip(img, 1)
             if compressed:
                 img = cv2.imdecode(img, 1)
             img = cv2.resize(img,  eval(self.data_args.image_size_stable))
             frames.append(img)
 
-        if not self.train_type:
-            img_path = image_seq.decode('utf-8')
-            # img_path = img_path.replace("code/", f"code/train/")
-            img = cv2.imread(img_path)
-            img = cv2.resize(img,  eval(self.data_args.image_size_stable))
-            frames.append(img)
+        # if not self.train_type:
+        img_path = obs_img.decode('utf-8')
+        # img_path = img_path.replace("code/", f"code/train/")
+        img = cv2.imread(img_path)
+        if mirror:
+            img = cv2.flip(img, 1)
+        if compressed:
+            img = cv2.imdecode(img, 1)
+        img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+        frames.append(img)
 
 
         # 存储单帧图像（最后一帧）
@@ -309,6 +275,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
             action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
             action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
 
+
+        # plot_actions_and_save_frames(old_raw_lang, action, frames, 'check_hdf5')
         return original_action_shape, action, action_len, image_dict, frames, qpos, qvel, raw_lang, reasoning
 
 
@@ -640,7 +608,7 @@ def find_all_hdf5(dataset_dir, skip_mirrored_data, rank0_print=print):
         for filename in fnmatch.filter(files, '*.hdf5'):
             if 'features' in filename:
                 continue
-            if skip_mirrored_data and 'mirror' in filename:
+            if skip_mirrored_data and 'mirror_2' in filename:
                 continue
             dataset_paths.append(os.path.join(root, filename))
 
@@ -724,7 +692,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
         # ① name_filter
         filtered = [p for p in raw_paths if name_filter(p)]
         # ② valid h5
-        filtered = filter_valid_hdf5(filtered, rank0_print)
+        # filtered = filter_valid_hdf5(filtered, rank0_print)
         dataset_path_list_list.append(filtered)
 
     # # 打印统计
@@ -767,7 +735,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
     # 3) 后续统计和数据加载逻辑保持不变
     # ------------------------------------------------------------------
     dataset_path_list = [p for sub in dataset_path_list_list for p in sub] #same as flatten_list
-    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/split_data/single_norm_stats.json")
+    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/split_data/mirror_single.json")
     rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
 
     train_episode_len_l = [[all_episode_len[i] for i in ids] for ids in train_episode_ids_l]

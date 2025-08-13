@@ -371,8 +371,8 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
         frame_paths=[]
         for i in range(len(obs_ds)):
             png = frames_dir / f"frame_{i:06d}.png"
-            # if not png.exists():
-            #     save_png(obs_ds[i], png)
+            if not png.exists():
+                save_png(obs_ds[i], png)
             rel_path = png.as_posix()
             frame_paths.append(rel_path)
 
@@ -409,7 +409,7 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 d.create_dataset('action', data=actions, compression='gzip')
                 qposes = np.zeros_like(actions)
                 d.create_dataset('qpos', data=qposes, compression='gzip')
-                if viz_root and False:
+                if viz_root and True:
                     visualize_follow_path(d, actions,huamn_local, viz_root/ep_name/f"action_{obs_idx}_{type}.png")
     print(f"✓ {ep_name} -> {dst_h5}")
 
@@ -431,13 +431,13 @@ if __name__=="__main__":
     args=ap.parse_args()
     args.src_dir = "data/raw_data/raw_single_follow_data"
     args.frames_dir ="data/frames/single_follow"
-    args.dst_dir = "data/proc_data/single_follow_temp"
+    args.dst_dir = "data/proc_data/single_follow"
 
-    args.src_dir = "data/raw_data/multi_follow_hdf5"
-    args.frames_dir ="data/frames/multi_follow"
-    args.dst_dir = "data/proc_data/multi_follow_temp"
+    # args.src_dir = "data/raw_data/multi_follow_hdf5"
+    # args.frames_dir ="data/frames/multi_follow"
+    # args.dst_dir = "data/proc_data/multi_follow_temp"
 
-    args.viz = "results_multi/test/viz_temp"
+    args.viz = "results/single_follow"
     args.history = 10
     viz=Path(args.viz) if args.viz else None
     main(Path(args.src_dir), Path(args.frames_dir), Path(args.dst_dir), viz, args.history)

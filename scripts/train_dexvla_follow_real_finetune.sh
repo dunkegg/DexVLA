@@ -5,13 +5,12 @@ LLM_MODEL_SIZE=2B
 ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
 DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
-MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
+MNOP=OUTPUT/single_follow_normal/checkpoint-20000 # official qwen2_vl weights
 
-TASKNAME=follow_hdf5
+TASKNAME=real_finetue
 
-OUTPUT=OUTPUT/qwen2_follow_test
-
-torchrun --nproc_per_node=1 --master_port=29605 ./train_vla.py \
+OUTPUT=OUTPUT/qwen2_follow_real
+deepspeed --master_port 29604 --include=localhost:0,1 ./train_vla.py \
   --use_reasoning False \
   --lora_enable False \
   --using_film True \
@@ -31,22 +30,22 @@ torchrun --nproc_per_node=1 --master_port=29605 ./train_vla.py \
   --enable_distilbert False \
   --tune_mm_mlp_adapter True \
   --freeze_vision_tower False \
-  --freeze_backbone False \
+  --freeze_backbone True \
   --mm_use_im_start_end False \
   --mm_use_im_patch_token False \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 80000 \
-  --per_device_train_batch_size 1 \
+  --max_steps 4000 \
+  --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 10000 \
+  --save_steps 1000 \
   --save_total_limit 50 \
   --learning_rate 2e-5 \
   --weight_decay 0. \
   --warmup_ratio 0.01 \
-  --lr_scheduler_type "cosine" \
+  --lr_scheduler_type "constant" \
   --logging_steps 50 \
   --tf32 True \
   --model_max_length 2048 \

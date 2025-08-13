@@ -260,13 +260,15 @@ class ScaleDP(PreTrainedModel):
         from diffusers.schedulers.scheduling_ddim import DDIMScheduler
         self.num_inference_timesteps = config.num_inference_timesteps
         # self.proj_to_action = nn.Identity()
+        # self.prediction_type = 'v_prediction'
+        self.prediction_type = 'sample'
         self.noise_scheduler = DDIMScheduler(
             num_train_timesteps=config.num_train_timesteps, # 100
             beta_schedule='squaredcos_cap_v2',
             clip_sample=True,
             set_alpha_to_one=True,
             steps_offset=0,
-            prediction_type='epsilon'
+            prediction_type=self.prediction_type
         )
         self.num_queries = config.num_queries #16
         self.noise_samples = config.noise_samples # 1
@@ -415,8 +417,28 @@ class ScaleDP(PreTrainedModel):
 
             noise_pred = self.model_forward(noisy_actions, timesteps, global_cond=hidden_states, states=states)
             noise = noise.view(noise.size(0) * noise.size(1), *noise.size()[2:])
-            loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
+            
+            # actions: x0, noise: ε, timesteps: t
+            if self.noise_scheduler.config.prediction_type == 'epsilon':
+                target = noise
+            elif self.noise_scheduler.config.prediction_type in ['sample', 'x0']:
+                target = actions
+            elif self.noise_scheduler.config.prediction_type == 'v_prediction':
+                a_bar = self.noise_scheduler.alphas_cumprod.to(actions.device)[timesteps]   # (B,)
+                a = a_bar.sqrt()                        # √ᾱ_t
+                s = (1 - a_bar).sqrt()                  # √(1-ᾱ_t)
+                # 扩维到 (B,1,1) 以便和 (B,T,D) 广播
+                a = a.view(-1, 1, 1)
+                s = s.view(-1, 1, 1)
+                target = a * noise - s * actions
+            # loss = F.mse_loss(model_output, target)
+            
+            # loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
+            #wzj
+            loss = torch.nn.functional.mse_loss(noise_pred, target, reduction='none')
+            
             loss = (loss * ~is_pad.unsqueeze(-1)).mean()
+            
             # loss_dict['loss'] = loss
             # return {'loss': loss}
             output = {'loss': loss}
@@ -438,18 +460,6 @@ class ScaleDP(PreTrainedModel):
 
                     # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
                     timesteps = self.noise_scheduler.timesteps.tolist()
-
-                    # 找到10的位置
-                    if 10 in timesteps and 0 in timesteps:
-                        idx_10 = timesteps.index(10)
-                        idx_0 = timesteps.index(0)
-
-                        # 替换 [10, 0] 为细化版本
-                        refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
-                        timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
-
-                        # 更新 scheduler
-                        self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
 
                     for k in self.noise_scheduler.timesteps:
                         # if k.item() < 2:
@@ -501,8 +511,8 @@ class ScaleDP(PreTrainedModel):
             #     refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
             #     timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
 
-            # 更新 scheduler
-            self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+                # # 更新 scheduler
+                # self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
 #----------------------------------------------------------------------------------------------------------
 
             for k in self.noise_scheduler.timesteps:
