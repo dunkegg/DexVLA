@@ -5,7 +5,8 @@ exp_name: view_sample
 scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
 json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 human_data: human_follower/humanoid_data
-model_path: OUTPUT/qwen2_new_follow_sample/checkpoint-30000
+model_path: OUTPUT/qwen2_new_follow_sample/checkpoint-20000
+# model_path: OUTPUT/single_follow_normal/checkpoint-20000
 
 
 max_episodes: 1000
@@ -39,6 +40,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot_mirror
-video_output_dir: results_eval_mirror
+img_output_dir: eval_plot_mirror_2
+video_output_dir: results_eval_mirror_2
 log_path: null

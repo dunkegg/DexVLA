@@ -175,7 +175,7 @@
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
-          "CUDA_VISIBLE_DEVICES": "2",       
+          "CUDA_VISIBLE_DEVICES": "0",       
         },
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"

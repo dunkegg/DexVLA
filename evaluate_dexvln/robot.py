@@ -126,6 +126,8 @@ class qwen2_vla_policy:
         return data_dict
     
 def smooth_quat(actions, window_size=3):
+    if len(actions) == 0:
+        return []
     height = actions[0][0][1]
     yaw_smooth = []
     for pos, quat in actions:
@@ -179,7 +181,7 @@ class FakeRobotEnv():
         self.episode_id = None
         self.plot_dir = plot_dir
         
-        self.smooth_window_size = 3
+        self.smooth_window_size = 6
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
@@ -336,54 +338,71 @@ class FakeRobotEnv():
         if self.step_idx + comp_size > len(self.step_actions) - 1:
             self.step_actions = []
             self.step_idx = 0
-            while len(self.action_queue) > 18:
+            while len(self.action_queue) > 0:
                 self.step_actions.append(self.action_queue.popleft())
 
-            # self.step_actions = smooth_quat(self.step_actions)
+            self.step_actions = smooth_quat(self.step_actions, self.smooth_window_size)
 
 
-        else:
-            new_actions = []
-            while len(self.action_queue) > 18:
-                new_actions.append(self.action_queue.popleft())
-            #smooth
+        new_actions = []
+        while len(self.action_queue) > 0:
+            new_actions.append(self.action_queue.popleft())
+        #smooth
+        new_actions = smooth_quat(new_actions, self.smooth_window_size)
+        origin_future_steps = self.step_actions[self.step_idx:self.step_idx+comp_size]
+        # origin_smooth = smooth_quat(origin_future_steps, self.smooth_window_size)
 
-            origin_future_steps = self.step_actions[self.step_idx:self.step_idx+comp_size]
-            origin_smooth = smooth_quat(origin_future_steps, self.smooth_window_size)
+        new_future_steps = new_actions[0:comp_size]
+        # new_smooth = smooth_quat(new_future_steps, self.smooth_window_size)
+        changed = False
+        # for (p1, y1), (p2, y2) in zip(origin_smooth, new_smooth):
+        #     pos_diff = np.linalg.norm(p1 - p2)
+        #     yaw_diff = abs(shortest_angle_diff(y1, y2))
+        #     if pos_diff > 0.2 or yaw_diff > 0.2:
+        #         changed = True
+        #         break
+        # changed = False
+        if changed:
+            self.step_actions = new_actions
+            self.step_idx = 0
 
-            new_future_steps = new_actions[0:comp_size]
-            new_smooth = smooth_quat(new_future_steps, self.smooth_window_size)
-            changed = False
-            # for (p1, y1), (p2, y2) in zip(origin_smooth, new_smooth):
-            #     pos_diff = np.linalg.norm(p1 - p2)
-            #     yaw_diff = abs(shortest_angle_diff(y1, y2))
-            #     if pos_diff > 0.2 or yaw_diff > 0.2:
-            #         changed = True
-            #         break
-            # changed = False
-            if changed:
-                self.step_actions = new_actions
-                self.step_idx = 0
-            else:
-                move_dis = 0
-                for i in range(self.step_idx, len(self.step_actions)-1):
-                    if move_dis > distance:
-                        self.step_idx = i
-                        break
+        move_dis = 0
 
-                    cur_action = self.step_actions[i]
-                    next_action = self.step_actions[i+1]
-                    seg_vec = next_action[0] - cur_action[0]
+        first_point = self.step_actions[0]
+        last_point = self.step_actions[-1]
+        seg_vec = last_point[0] - first_point[0]
+        seg_len = seg_vec.length()
+        if seg_len <0.2:
+            self.step_idx = 0
+            self.step_actions = []
+            return
 
-                    seg_len = seg_vec.length()
-                    if seg_len <1e-4:
-                        continue
-                    move_dis += seg_len
+        if seg_len <0.4:
+            self.step_idx = 0
+            self.step_actions = []
+            direction = seg_vec.normalized()
+            orientation = direction / np.linalg.norm(direction) 
+            quaternion = direction_to_combined_quaternion(orientation)
+            self.set_state(last_point[0], quaternion)
 
-                    direction = seg_vec.normalized()
-                    orientation = direction / np.linalg.norm(direction) 
-                    quaternion = direction_to_combined_quaternion(orientation)
-                    self.set_state(cur_action[0], quaternion)
+        for i in range(self.step_idx+1, len(self.step_actions)):
+            if move_dis > distance:
+                break
+
+            cur_action = self.step_actions[i-1]
+            next_action = self.step_actions[i]
+            seg_vec = next_action[0] - cur_action[0]
+
+            seg_len = seg_vec.length()
+            if seg_len <1e-4:
+                continue
+            move_dis += seg_len
+
+            direction = seg_vec.normalized()
+            orientation = direction / np.linalg.norm(direction) 
+            quaternion = direction_to_combined_quaternion(orientation)
+            self.set_state(next_action[0], quaternion)
+            self.step_idx = i
 
             
 

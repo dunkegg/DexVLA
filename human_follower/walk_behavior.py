@@ -472,13 +472,15 @@ def walk_along_path_multi(
                 
             sample_fps = 1.3
             sample_fps = 3
-            plan_fps = 10
+            plan_fps = 2
             follow_size = 5
             output["sample_fps"] = sample_fps
             output["plan_fps"] = plan_fps
             output["follow_size"] = follow_size
             # step_fps = 0.4
             
+            max_move_dis = 0.7
+            # max_move_dis = forward_speed/plan_fps
             if now - last_sample_time >= 1/sample_fps:
                 last_sample_time = now
                 obs = sim.get_sensor_observations(0)
@@ -488,7 +490,7 @@ def walk_along_path_multi(
                 robot.eval_bc()
                 position,yaw,quat = humanoid_agent.get_pose()
                 robot.save_obs(now, position)
-                robot.compare_step(follow_size, forward_speed/plan_fps)
+                robot.compare_step(follow_size, max_move_dis)
 
             if time_step == len(human_path)-1:
                 step_range = int(1.5/(forward_speed*timestep_gap))
@@ -501,10 +503,11 @@ def walk_along_path_multi(
                     robot.eval_bc()
                     position,yaw,quat = humanoid_agent.get_pose()
                     robot.save_obs(now, position)
-                    robot.compare_step(follow_size, forward_speed/plan_fps)
+                    robot.compare_step(follow_size, max_move_dis)
                 
-                if calculate_euclidean_distance(robot.get_state().position, goal_pos) < 2:
-                    follow_success = True
+                    if calculate_euclidean_distance(robot.get_state().position, goal_pos) < 2:
+                        follow_success = True
+                        break
 
 
 
