@@ -8,16 +8,31 @@ from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , q
 from data_utils.utils import set_seed
 import torch
 import numpy as np
-from evaluate.visualize_action import plot_actions, plot_obs
+from evaluate.visualize_action import plot_actions, plot_obs, plot_ctrl
 from collections import deque
 import imageio
 from PIL import Image
 
+from evaluate_dexvln.controller import TrajectoryFollower
 
 from qwen2_vla.model_load_utils import load_model_for_eval
 from policy_heads import * 
 from qwen2_vla.utils.image_processing_qwen2_vla import *  
 
+def compute_yaw_from_xy(path_xyyaw):
+    xy = path_xyyaw[:, :2]  # 取 x, y
+    yaw_list = []
+    for i in range(len(xy)):
+        if i < len(xy) - 1:
+            dx = xy[i+1, 0] - xy[i, 0]
+            dy = xy[i+1, 1] - xy[i, 1]
+        else:  # 最后一个点用前一个点的方向
+            dx = xy[i, 0] - xy[i-1, 0]
+            dy = xy[i, 1] - xy[i-1, 1]
+        yaw = np.arctan2(dy, dx)  # -pi ~ pi
+        yaw_list.append(yaw)
+    yaw_array = np.array(yaw_list)
+    return np.hstack([xy, yaw_array[:, None]])  # 拼回 [x, y, yaw]
 
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
@@ -182,6 +197,8 @@ class FakeRobotEnv():
         self.plot_dir = plot_dir
         
         self.smooth_window_size = 6
+
+        self.follower = None
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
@@ -216,6 +233,13 @@ class FakeRobotEnv():
         self.state.position = pos
         self.state.rotation = rot
         self.agent.set_state(self.state)
+
+    def set_world_pos(self, x,y,yaw, height):
+        self.w_x = x
+        self.w_y = y
+        self.w_yaw = yaw
+        self.w_height = height
+        self.origin_pos = [self.w_x,self.w_y,self.w_yaw]
 
     def get_state(self):
         return self.agent.get_state()
@@ -406,11 +430,31 @@ class FakeRobotEnv():
 
             
 
-
+    def ctrl_step(self, now_time, followed_position):
+        if not self.follower or len(self.world_actions)==0:
+            return
         
+        agent_pos = [self.w_x,self.w_y,self.w_yaw]
+        x_cmd, y_cmd, yaw_cmd = self.follower.step(now_time, self.w_x, self.w_y, self.w_yaw)
+        # yaw_cmd = -yaw_cmd
+        self.w_x = x_cmd
+        self.w_y = y_cmd
+        self.w_yaw = yaw_cmd
+        pos = to_vec3([self.w_x, self.w_height, self.w_y])
+        quat = quat_from_angle_axis(self.w_yaw , np.array([0, 1, 0]))
+        self.set_state(pos, quat)
+
+        pid_pos = [x_cmd, y_cmd, yaw_cmd]
+        followed_pos = [followed_position.x,followed_position.z]
+        assert len(self.history_obs)>0
+        cur_image = self.history_obs[-1]
+        ctrl_img_np = plot_ctrl(now_time, self.world_actions, pid_pos, agent_pos, followed_pos, self.origin_pos,cur_image)
+        plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}","PID")
+        os.makedirs(plot_dir, exist_ok=True)
+        imageio.imwrite(f'{plot_dir}/{round(now_time, 1)}.png', ctrl_img_np)
         
 
-    def eval_bc(self):
+    def eval_bc(self, now_time):
 
         assert self.instruction  is not None, "raw lang is None!!!!!!"
         set_seed(0)
@@ -484,15 +528,43 @@ class FakeRobotEnv():
             # local_actions[:,1] = local_actions[:,1]
             height_dim = np.zeros((local_actions.shape[0], 1))
             # 拼接成 (30, 4)，在 dim=1 方向添加
+
+            local_actions = smooth_yaw(local_actions, self.smooth_window_size)
+
             local_actions = np.insert(local_actions, 1, 0, axis=1)
             
-            world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),cur_yaw, type=1)
+            raw_yaw_world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),cur_yaw, type=1)
+            
+            raw_yaw_world_actions = np.delete(raw_yaw_world_actions, 1, axis=1)
+            world_actions = compute_yaw_from_xy(raw_yaw_world_actions)
+            world_actions = np.insert(world_actions, 1, 0, axis=1)
             self.world_actions = world_actions
+
+            # total_time = path_length / v_des
+            
+
             habitat_actions = []
             for i in range(len(world_actions)):
                 pos = to_vec3([world_actions[i][0],world_actions[i][1],world_actions[i][2]])
                 quat = quat_from_angle_axis(world_actions[i][3], np.array([0, 1, 0]))
                 habitat_actions.append([pos, quat])
+
+            first_point = to_vec3([world_actions[0][0],world_actions[0][1],world_actions[0][2]])
+            last_point = to_vec3([world_actions[-1][0],world_actions[-1][1],world_actions[-1][2]])
+            seg_vec = last_point - first_point
+            seg_len = seg_vec.length()
+            if seg_len <0.1:
+                follow_world_actions = [[self.w_x, self.w_y, self.w_yaw]]
+            else:
+                follow_world_actions = np.delete(world_actions, 1, axis=1)
+                follow_world_actions[:,2] = -follow_world_actions[:,2] 
+
+            self.follower = TrajectoryFollower(follow_world_actions, total_time=1.5, 
+                                               kp_xy=1.0, ki_xy=0.0, kd_xy=0.0,
+                                               kp_yaw=0.5, ki_yaw=0.0, kd_yaw=0.0)
+            
+            self.follower.reset(now_time)
+
             
 
             self.action_queue.extend(

@@ -200,3 +200,81 @@ def plot_obs(time,predicted_actions ,raw_lang, obs,human_position, target_action
     plt.close(fig)
 
     return img_np  # 返回 numpy 格式图像
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrow
+from io import BytesIO
+from PIL import Image
+import math
+
+def plot_ctrl(now_time, world_actions, pid_pos, agent_pos, followed_pos, origin_pos,cur_image):
+    """
+    Args:
+        now_time: 当前时间
+        world_actions: (30,4) array, 每个是 [x, height, y, yaw]
+        pid_pos: [x, y, yaw] 当前 PID 输出目标
+        agent_pos: [x, y, yaw] 当前机器人实际位置
+        followed_pos: [x, y] 被跟随的位置
+        cur_image: numpy图像 (H,W,3)
+    Returns:
+        numpy array (合并后的图)
+    """
+    yaw_bias = math.pi / 2
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+
+    # --- 左边放原图 ---
+    axs[0].imshow(cur_image)
+    axs[0].axis('off')
+    axs[0].set_title(f"Camera View t={now_time:.1f}s")
+
+    # --- 右边画轨迹 ---
+    # 以 agent_pos 为原点
+    traj_x = world_actions[:, 0] - origin_pos[0]
+    traj_y = world_actions[:, 2] - origin_pos[1]
+    axs[1].plot(traj_x, -traj_y, 'b-', label="Planned Path")
+    # axs[1].scatter(traj_x[0], -traj_y[0], c='blue', marker='o', label="Start")
+
+    # 当前机器人位置
+    axs[1].scatter(0, 0, c='black', s=50, label="Origin")
+    # 朝向箭头
+    arrow_len = 0.3
+
+    agent_dx = agent_pos[0] - origin_pos[0]
+    agent_dy = agent_pos[1] - origin_pos[1]
+    axs[1].scatter(agent_dx, -agent_dy, c='green', s=30, label="Agent")
+    axs[1].arrow(agent_dx, -agent_dy,
+                 arrow_len * np.cos(agent_pos[2]+yaw_bias),
+                 arrow_len * np.sin(agent_pos[2]+yaw_bias),
+                 head_width=0.1, head_length=0.1, fc='green', ec='green')
+
+    # PID 目标位置 + 朝向
+    pid_dx = pid_pos[0] - origin_pos[0]
+    pid_dy = pid_pos[1] - origin_pos[1]
+    axs[1].scatter(pid_dx, -pid_dy, c='orange', s=30, label="PID Target")
+    axs[1].arrow(pid_dx, -pid_dy,
+                 arrow_len * np.cos(pid_pos[2]+yaw_bias),
+                 arrow_len * np.sin(pid_pos[2]+yaw_bias),
+                 head_width=0.1, head_length=0.1, fc='orange', ec='orange')
+
+    # 跟随点
+    follow_dx = followed_pos[0] - origin_pos[0]
+    follow_dy = followed_pos[1] - origin_pos[1]
+    axs[1].scatter(follow_dx, -follow_dy, c='red', s=50, label="Followed Pos")
+
+    axs[1].axis('equal')
+    axs[1].set_xlabel("X (m)")
+    axs[1].set_ylabel("Y (m)")
+    axs[1].legend()
+    axs[1].set_title("Control Visualization (Top-down)")
+
+    # 把图转成 numpy
+    fig.tight_layout()
+    buf = BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    img = Image.open(buf)
+    img_np = np.array(img)
+    return img_np
