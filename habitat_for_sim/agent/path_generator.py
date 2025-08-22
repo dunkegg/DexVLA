@@ -387,6 +387,7 @@ def quaternion_to_yaw(q):
     cosy_cosp = 1.0 - 2.0 * (q.vector.y**2 + q.vector.z**2)
     return math.atan2(siny_cosp, cosy_cosp)
 import quaternion as qt
+from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 def convert_path(raw_path):
     """
     raw_path: [(pos_list, quat_wxyz), ...]
@@ -407,9 +408,11 @@ def convert_path(raw_path):
             mn.Vector3(quat_raw[1], quat_raw[2], quat_raw[3]),
             quat_raw[0],
         )
+        quat_qt = qt.quaternion(quat_raw[0], quat_raw[1], quat_raw[2], quat_raw[3])
+        yaw, _ = quat_to_angle_axis(quat_qt)
         
-        # 3) 取 yaw
-        yaw = quaternion_to_yaw(quat)
+        # # 3) 取 yaw
+        # yaw = quaternion_to_yaw(quat)
         # qt.quaternion(w, quat_raw[1], y, z)     
         out.append((pos_vec,quat,yaw))
     return out

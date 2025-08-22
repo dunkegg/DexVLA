@@ -46,9 +46,9 @@ class HybridAStar:
     def __init__(
         self,
         *,
-        xy_resolution: float = 0.1,  # metres per grid
-        yaw_resolution: float = math.radians(5),
-        step_length: float = 0.25,  # forward progress each expansion
+        # xy_resolution: float = 0.1,  # metres per grid
+        # yaw_resolution: float = math.radians(5),
+        step_length: float = 0.25,  # forward progress each expansion 单次前进步长（越小越精细，可更好贴合转弯）
         # steering_angles: Tuple[float, ...] = (
         #     -0.35,
         #     0.0,
@@ -59,10 +59,12 @@ class HybridAStar:
         map_origin: Tuple[float, float] = (0.0, 0.0),  # world coords of occ_map (0,0)
         occupancy_map: Optional[np.ndarray] = None,
         sim=None,
-        height = None
+        height = None,
+        xy_threshold=None,  # threshold for xy goal check
+        yaw_threshold=None,  # threshold for yaw goal check
     ) -> None:
-        self.xy_res = xy_resolution
-        self.yaw_res = yaw_resolution
+        self.xy_res = xy_threshold
+        self.yaw_res = yaw_threshold
         self.step = step_length
         self.height = height
         self.L = rear_wheelbase
@@ -72,8 +74,8 @@ class HybridAStar:
         self.origin_x, self.origin_y = map_origin
         self.map = occupancy_map  # 0/1 uint8 grid
         self.sim = sim  # habitat simulator (optional)
-        R  = 0.5              # 期望最小转弯半径
-        n  = 5                # 想要 5 个离散档
+        R  = 0.1              # 期望最小转弯半径 越小越灵活
+        n  = 10                # 想要 5 个离散档  越大越精细
         delta_max = math.atan(self.L / R)   # 车辆几何极限
         steering_angles = np.linspace(-delta_max, delta_max, n)    # 
         self.steers = steering_angles
@@ -111,6 +113,7 @@ class HybridAStar:
             closed.add(key)
 
             # goal check
+            #todo 这里的阈值可以调宽泛一些
             if (
                 math.hypot(goal.x - current.x, goal.y - current.y) < self.xy_res
                 and abs(self._norm_ang(goal.yaw - current.yaw)) < self.yaw_res
@@ -151,12 +154,12 @@ class HybridAStar:
         return math.hypot(g.x - n.x, g.y - n.y) + abs(self._norm_ang(g.yaw - n.yaw)) * self.L
 
     def _is_valid(self, node: Node) -> bool:
-
-        if self.sim is not None:
-            world_pt = mn.Vector3(node.x, self.height, node.y)  # 假设 Y-up
-            distance = self.pathfinder.distance_to_closest_obstacle(np.array[node.x, self.height, node.y])
-            if distance <0.05:
-                return False
+        #todo 把条件换成是否黑图
+        # if self.sim is not None:
+        #     world_pt = mn.Vector3(node.x, self.height, node.y)  # 假设 Y-up
+        #     # distance = self.pathfinder.distance_to_closest_obstacle(np.array[node.x, self.height, node.y])
+        #     if distance <0.05:
+        #         return False
         return True
 
     @staticmethod
