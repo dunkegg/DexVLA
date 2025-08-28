@@ -203,33 +203,49 @@ class AnchorClassifier(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(feature_dim + hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, num_anchors)
+            nn.Linear(hidden_dim, num_anchors)  # 直接输出每个 anchor 的分数
         )
     def initialize_weights(self):
-        # 第一层: Xavier Uniform
-        nn.init.xavier_uniform_(self.fc[0].weight)
-        nn.init.constant_(self.fc[0].bias, 0)
+        """按照 ScaleDP 风格初始化 fc 的 Linear 层"""
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
 
-        # 第二层: Normal(0, 0.02)
-        nn.init.normal_(self.fc[2].weight, mean=0.0, std=0.02)
-        nn.init.constant_(self.fc[2].bias, 0)
+        self.apply(_basic_init)
+
     def forward(self, hidden_states, anchors):
         """
         :param hidden_states: [B, H]
-        :param trajectories: [B, T, D] 轨迹序列
-        :return: logits [B, num_anchors]
+        :param anchors: [N, T, D] 轨迹库
+        :return: probs [B, N] 概率分布
         """
+        B, H = hidden_states.shape
+        N, T, D = anchors.shape
+
+        # 对 anchors 做时间维度聚合
         if self.pooling == 'mean':
-            traj_embed = anchors.mean(dim=1)  # [B, D]
+            anchor_embed = anchors.mean(dim=1)  # [N, D]
         elif self.pooling == 'max':
-            traj_embed, _ = anchors.max(dim=1)  # [B, D]
+            anchor_embed, _ = anchors.max(dim=1)  # [N, D]
         else:
             raise NotImplementedError(f"Pooling {self.pooling} not supported")
 
-        # 拼接 hidden_states 和轨迹 embedding
-        x = torch.cat([hidden_states, traj_embed], dim=-1)  # [B, H + D]
-        logits = self.fc(x)  # [B, num_anchors]
-        probs = F.softmax(logits, dim=-1) 
+        # 扩展 hidden_states 与 anchor_embed 方便拼接
+        hidden_exp = hidden_states.unsqueeze(1).expand(B, N, H)   # [B, N, H]
+        anchor_exp = anchor_embed.unsqueeze(0).expand(B, N, D)    # [B, N, D]
+
+        x = torch.cat([hidden_exp, anchor_exp], dim=-1)  # [B, N, H+D]
+
+        # flatten 到 B*N, 输入 fc
+        x_flat = x.view(B*N, H+D)  # [B*N, H+D]
+        logits_flat = self.fc(x_flat)  # [B*N, N]
+
+        # reshape 回 B, N, N -> 取对角线（每个 hidden 对应 N 个 anchor）
+        logits = logits_flat.view(B, N, N).diagonal(dim1=1, dim2=2)  # [B, N]
+        probs = F.softmax(logits, dim=-1)  # [B, N]
+
         return probs
 
 from .configuration_scaledp import ScaleDPPolicyConfig
@@ -280,9 +296,9 @@ class ScaleDP(PreTrainedModel):
         if obs_as_cond:
             self.cond_obs_emb = nn.Linear(config.cond_dim, config.n_emb)
 
-        self.num_anchors = 40
+        self.num_anchors = 20
         # self.anchor_classifier = nn.Linear(config.n_emb, self.num_anchors)
-        self.anchor_classifier = AnchorClassifier(feature_dim=config.input_dim, hidden_dim=config.n_emb, num_anchors=self.num_anchors)
+        self.anchor_classifier = AnchorClassifier(feature_dim=config.input_dim, hidden_dim=config.cond_dim, num_anchors=self.num_anchors)
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, config.prediction_horizon, config.n_emb))
 
@@ -318,8 +334,25 @@ class ScaleDP(PreTrainedModel):
         self.noise_samples = config.noise_samples # 1
         # self.num_inference_timesteps = config.num_inference_timesteps # 100
 
-
         self.anchors = None
+        import h5py
+        h5_path = "data/astar_paths/split/episode_0_proc_000000.hdf5"
+        with h5py.File(h5_path, "r") as f:
+            out = {}
+            for key in [
+                # "cands_xyz_resampled",
+                # "cands_cluster_labels",
+                "cands_cluster_centroids",
+                # "cands_cluster_counts",
+            ]:
+                assert key in f
+                out[key] = f[key][()]
+            self.anchors = out["cands_cluster_centroids"]
+
+
+
+     
+
 
     def initialize_weights(self):
         # Initialize transformer layers:
@@ -426,35 +459,42 @@ class ScaleDP(PreTrainedModel):
         )
         return optimizer
 
-    def get_nearest_anchor(self, actions: np.ndarray, anchors: np.ndarray):
+    def get_nearest_anchor(self, actions: torch.Tensor, anchors: torch.Tensor):
         """
-        轨迹级别的最近 anchor 查找 (TrackVLA 风格)
+        轨迹级别的最近 anchor 查找 (TrackVLA 风格)，支持 batch
 
         Parameters
         ----------
-        actions : np.ndarray
-            shape (B, T, D)，当前轨迹
-        anchors : np.ndarray
+        actions : torch.Tensor
+            shape (B, T, D)，batch 中的轨迹
+        anchors : torch.Tensor
             shape (N, T, D)，anchor 库
 
         Returns
         -------
-        nearest_idx : int
-            最近 anchor 的索引
-        nearest_anchor : np.ndarray
-            shape (T, D)，最近的 anchor 轨迹
+        nearest_idx : torch.LongTensor
+            shape (B,)，每个样本最近 anchor 的索引
+        nearest_anchor : torch.Tensor
+            shape (B, T, D)，每个样本对应的最近 anchor 轨迹
         """
-        assert actions.ndim == 2, f"actions 应该是 (T, D)，得到 {actions.shape}"
+        assert actions.ndim == 3, f"actions 应该是 (B, T, D)，得到 {actions.shape}"
         assert anchors.ndim == 3, f"anchors 应该是 (N, T, D)，得到 {anchors.shape}"
-        assert anchors.shape[1:] == actions.shape, \
-            f"anchors 长度和 actions 必须一致: {anchors.shape[1:]} vs {actions.shape}"
+        assert anchors.shape[1:] == actions.shape[1:], \
+            f"anchors 长度和 actions 必须一致: {anchors.shape[1:]} vs {actions.shape[1:]}"
 
-        # 计算每条 anchor 的 L2 轨迹误差
-        errors = np.mean((anchors - actions[None, :, :]) ** 2, axis=(1, 2))  # shape (N,)
+        B, T, D = actions.shape
+        N = anchors.shape[0]
 
-        # 选最近的 anchor
-        nearest_idx = int(np.argmin(errors))
-        nearest_anchor = anchors[nearest_idx]
+        # 扩展维度计算 L2 距离
+        # actions: (B, 1, T, D), anchors: (1, N, T, D)
+        diff = actions.unsqueeze(1) - anchors.unsqueeze(0)  # (B, N, T, D)
+        errors = (diff ** 2).mean(dim=(2, 3))  # (B, N)
+
+        # 找到每个样本最近的 anchor
+        nearest_idx = torch.argmin(errors, dim=1)  # (B,)
+
+        # 根据索引取 anchor
+        nearest_anchor = anchors[nearest_idx]  # (B, T, D)
 
         return nearest_idx, nearest_anchor
 
@@ -476,7 +516,7 @@ class ScaleDP(PreTrainedModel):
 
             # === 1. 找到最近 anchor 并算 residual ===
             with torch.no_grad():
-                nearest_anchor, indices = self.get_nearest_anchor(actions, self.anchors)
+                indices , nearest_anchor= self.get_nearest_anchor(actions, torch.from_numpy(self.anchors).float().to(actions.device))
                 # one-hot label
                 anchor_labels = F.one_hot(indices, num_classes=self.num_anchors).float()  # [B, Ta, Na]
             residual = actions - nearest_anchor                        # 学 residual 而不是 action 本身
@@ -518,7 +558,7 @@ class ScaleDP(PreTrainedModel):
             # === 7. Anchor BCE loss ===
             bce_loss = 0.0
             if anchor_labels is not None:        # :param anchor_labels: one-hot anchor index labels, shape [B, num_anchors]
-                anchor_probs = self.anchor_classifier(hidden_states.mean(dim=1), self.anchor_classifier)  # [B*num_noise, num_anchors]
+                anchor_probs = self.anchor_classifier(hidden_states.mean(dim=1), torch.from_numpy(self.anchors).float().to(hidden_states.device))  # [B*num_noise, num_anchors]
                 # 注意 anchor_labels 只重复 B 次，需要扩展到 [B*num_noise, num_anchors]
                 anchor_labels = anchor_labels.repeat(num_noise_samples, 1)
                 bce_loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -526,6 +566,7 @@ class ScaleDP(PreTrainedModel):
                 )
 
             # === 8. 总 loss ===
+            self.beta = 1
             loss = mse_loss + self.beta * bce_loss
             # loss_dict['loss'] = loss
             # return {'loss': loss}
