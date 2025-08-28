@@ -190,6 +190,48 @@ class FinalLayer(nn.Module):
         x = self.linear(x)
         return x
 
+class AnchorClassifier(nn.Module):
+    def __init__(self, feature_dim, hidden_dim, num_anchors, pooling='mean'):
+        """
+        :param feature_dim: 单步轨迹的特征维度 D
+        :param hidden_dim: hidden_states 的维度 H
+        :param num_anchors: anchor 数量
+        :param pooling: pooling 类型，可选 'mean', 'max'
+        """
+        super().__init__()
+        self.pooling = pooling
+        self.fc = nn.Sequential(
+            nn.Linear(feature_dim + hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_anchors)
+        )
+    def initialize_weights(self):
+        # 第一层: Xavier Uniform
+        nn.init.xavier_uniform_(self.fc[0].weight)
+        nn.init.constant_(self.fc[0].bias, 0)
+
+        # 第二层: Normal(0, 0.02)
+        nn.init.normal_(self.fc[2].weight, mean=0.0, std=0.02)
+        nn.init.constant_(self.fc[2].bias, 0)
+    def forward(self, hidden_states, anchors):
+        """
+        :param hidden_states: [B, H]
+        :param trajectories: [B, T, D] 轨迹序列
+        :return: logits [B, num_anchors]
+        """
+        if self.pooling == 'mean':
+            traj_embed = anchors.mean(dim=1)  # [B, D]
+        elif self.pooling == 'max':
+            traj_embed, _ = anchors.max(dim=1)  # [B, D]
+        else:
+            raise NotImplementedError(f"Pooling {self.pooling} not supported")
+
+        # 拼接 hidden_states 和轨迹 embedding
+        x = torch.cat([hidden_states, traj_embed], dim=-1)  # [B, H + D]
+        logits = self.fc(x)  # [B, num_anchors]
+        probs = F.softmax(logits, dim=-1) 
+        return probs
+
 from .configuration_scaledp import ScaleDPPolicyConfig
 class ScaleDP(PreTrainedModel):
     """
@@ -238,6 +280,9 @@ class ScaleDP(PreTrainedModel):
         if obs_as_cond:
             self.cond_obs_emb = nn.Linear(config.cond_dim, config.n_emb)
 
+        self.num_anchors = 40
+        # self.anchor_classifier = nn.Linear(config.n_emb, self.num_anchors)
+        self.anchor_classifier = AnchorClassifier(feature_dim=config.input_dim, hidden_dim=config.n_emb, num_anchors=self.num_anchors)
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, config.prediction_horizon, config.n_emb))
 
@@ -245,6 +290,7 @@ class ScaleDP(PreTrainedModel):
             ScaleDPBlock(config.n_emb, config.num_heads, mlp_ratio=config.mlp_ratio) for _ in range(config.depth)
         ])
         self.final_layer = FinalLayer(config.n_emb, output_dim=config.output_dim)
+
         # self.initialize_weights()
         # constants
         self.T = T
@@ -260,18 +306,20 @@ class ScaleDP(PreTrainedModel):
         from diffusers.schedulers.scheduling_ddim import DDIMScheduler
         self.num_inference_timesteps = config.num_inference_timesteps
         # self.proj_to_action = nn.Identity()
-        self.prediction_type = 'sample'
         self.noise_scheduler = DDIMScheduler(
             num_train_timesteps=config.num_train_timesteps, # 100
             beta_schedule='squaredcos_cap_v2',
             clip_sample=True,
             set_alpha_to_one=True,
             steps_offset=0,
-            prediction_type=self.prediction_type
+            prediction_type='epsilon'
         )
         self.num_queries = config.num_queries #16
         self.noise_samples = config.noise_samples # 1
         # self.num_inference_timesteps = config.num_inference_timesteps # 100
+
+
+        self.anchors = None
 
     def initialize_weights(self):
         # Initialize transformer layers:
@@ -309,6 +357,8 @@ class ScaleDP(PreTrainedModel):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
+        if self.anchor_classifier is not None:
+            self.anchor_classifier.initialize_weights()
 
     def get_optim_groups(self, weight_decay: float = 1e-3):
         """
@@ -376,68 +426,107 @@ class ScaleDP(PreTrainedModel):
         )
         return optimizer
 
+    def get_nearest_anchor(self, actions: np.ndarray, anchors: np.ndarray):
+        """
+        轨迹级别的最近 anchor 查找 (TrackVLA 风格)
+
+        Parameters
+        ----------
+        actions : np.ndarray
+            shape (B, T, D)，当前轨迹
+        anchors : np.ndarray
+            shape (N, T, D)，anchor 库
+
+        Returns
+        -------
+        nearest_idx : int
+            最近 anchor 的索引
+        nearest_anchor : np.ndarray
+            shape (T, D)，最近的 anchor 轨迹
+        """
+        assert actions.ndim == 2, f"actions 应该是 (T, D)，得到 {actions.shape}"
+        assert anchors.ndim == 3, f"anchors 应该是 (N, T, D)，得到 {anchors.shape}"
+        assert anchors.shape[1:] == actions.shape, \
+            f"anchors 长度和 actions 必须一致: {anchors.shape[1:]} vs {actions.shape}"
+
+        # 计算每条 anchor 的 L2 轨迹误差
+        errors = np.mean((anchors - actions[None, :, :]) ** 2, axis=(1, 2))  # shape (N,)
+
+        # 选最近的 anchor
+        nearest_idx = int(np.argmin(errors))
+        nearest_anchor = anchors[nearest_idx]
+
+        return nearest_idx, nearest_anchor
+
     def forward(self, actions, hidden_states, states, is_pad):
         """
-        Forward pass for the diffusion head.
-        :param actions: target actions, shape [B, Ta, D] D:10 = 3+6+1
-        :param hidden_states: hidden states from the llava_pythia, as the conScaleDPion for the diffusion, shape [B,Tokens, D] 8 1200 1024
+        Forward pass for the anchor-based diffusion head (TrackVLA style).
+        
+        :param actions: target actions, shape [B, Ta, D]
+        :param hidden_states: hidden states from encoder, shape [B, Tokens, D]
         :param states: robot states, shape [B, D]
-        :return: loss
+        :param is_pad: padding mask, shape [B, Ta]
+        :return: total loss (mse + bce)
         """
         if actions is not None:  # training time
             B = actions.size(0)
             actions = actions[:, :self.num_queries]
             is_pad = is_pad[:, :self.num_queries]
             num_noise_samples = self.noise_samples
-            # sample noise to add to actions
-            noise = torch.randn([num_noise_samples] + list(actions.shape), device=actions.device,
-                                dtype=actions.dtype)  # num_noise, B, Ta, D(1, 2, 16, 14)
-            # sample a diffusion iteration for each data point
+
+            # === 1. 找到最近 anchor 并算 residual ===
+            with torch.no_grad():
+                nearest_anchor, indices = self.get_nearest_anchor(actions, self.anchors)
+                # one-hot label
+                anchor_labels = F.one_hot(indices, num_classes=self.num_anchors).float()  # [B, Ta, Na]
+            residual = actions - nearest_anchor                        # 学 residual 而不是 action 本身
+
+            # === 2. 采样噪声（和标准 diffusion 一样） ===
+            noise = torch.randn([num_noise_samples] + list(residual.shape),
+                                device=residual.device, dtype=residual.dtype)  # [num_noise, B, Ta, D]
+
             timesteps = torch.randint(
                 0, self.noise_scheduler.config.num_train_timesteps,
-                (B,), device=actions.device
+                (B,), device=residual.device
             ).long()
 
-            timesteps, noise = timesteps.to(actions.device), noise.to(actions.device)
+            timesteps, noise = timesteps.to(residual.device), noise.to(residual.device)
 
-            # add noise to the clean actions according to the noise magnitude at each diffusion iteration
-            # (this is the forward diffusion process)
-            noisy_actions = torch.cat([self.noise_scheduler.add_noise(
-                actions, noise[i], timesteps)
-                for i in range(len(noise))], dim=0)  # [num_noise_samples * B, Ta, action_dim]
+            # === 3. forward diffusion：residual 加噪 ===
+            noisy_residual = torch.cat([
+                self.noise_scheduler.add_noise(residual, noise[i], timesteps)
+                for i in range(len(noise))
+            ], dim=0)  # [num_noise * B, Ta, D]
 
-            noisy_actions = noisy_actions.to(dtype=actions.dtype)
-            assert hidden_states.ndim == 3
+            noisy_residual = noisy_residual.to(dtype=residual.dtype)
 
+            # === 4. repeat conds ===
             hidden_states = hidden_states.repeat(num_noise_samples, 1, 1)
             timesteps = timesteps.repeat(num_noise_samples)
             is_pad = is_pad.repeat(num_noise_samples, 1)
-            states = states.repeat(num_noise_samples,  1)
+            states = states.repeat(num_noise_samples, 1)
 
-            noise_pred = self.model_forward(noisy_actions, timesteps, global_cond=hidden_states, states=states)
+            # === 5. 模型预测噪声 ===
+            noise_pred = self.model_forward(noisy_residual, timesteps,
+                                            global_cond=hidden_states, states=states)
+
+            # === 6. Diffusion MSE loss ===
             noise = noise.view(noise.size(0) * noise.size(1), *noise.size()[2:])
-            
-            # actions: x0, noise: ε, timesteps: t
-            if self.noise_scheduler.config.prediction_type == 'epsilon':
-                target = noise
-            elif self.noise_scheduler.config.prediction_type in ['sample', 'x0']:
-                target = actions
-            elif self.noise_scheduler.config.prediction_type == 'v_prediction':
-                a_bar = self.noise_scheduler.alphas_cumprod.to(actions.device)[timesteps]   # (B,)
-                a = a_bar.sqrt()                        # √ᾱ_t
-                s = (1 - a_bar).sqrt()                  # √(1-ᾱ_t)
-                # 扩维到 (B,1,1) 以便和 (B,T,D) 广播
-                a = a.view(-1, 1, 1)
-                s = s.view(-1, 1, 1)
-                target = a * noise - s * actions
-            # loss = F.mse_loss(model_output, target)
-            
-            # loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
-            #wzj
-            loss = torch.nn.functional.mse_loss(noise_pred, target, reduction='none')
-            
-            loss = (loss * ~is_pad.unsqueeze(-1)).mean()
-            
+            mse_loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
+            mse_loss = (mse_loss * ~is_pad.unsqueeze(-1)).mean()
+
+            # === 7. Anchor BCE loss ===
+            bce_loss = 0.0
+            if anchor_labels is not None:        # :param anchor_labels: one-hot anchor index labels, shape [B, num_anchors]
+                anchor_probs = self.anchor_classifier(hidden_states.mean(dim=1), self.anchor_classifier)  # [B*num_noise, num_anchors]
+                # 注意 anchor_labels 只重复 B 次，需要扩展到 [B*num_noise, num_anchors]
+                anchor_labels = anchor_labels.repeat(num_noise_samples, 1)
+                bce_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                    anchor_probs, anchor_labels.float()
+                )
+
+            # === 8. 总 loss ===
+            loss = mse_loss + self.beta * bce_loss
             # loss_dict['loss'] = loss
             # return {'loss': loss}
             output = {'loss': loss}
@@ -460,12 +549,19 @@ class ScaleDP(PreTrainedModel):
                     # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
                     timesteps = self.noise_scheduler.timesteps.tolist()
 
+                    # 找到10的位置
+                    if 10 in timesteps and 0 in timesteps:
+                        idx_10 = timesteps.index(10)
+                        idx_0 = timesteps.index(0)
+
+                        # 替换 [10, 0] 为细化版本
+                        refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+                        timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+
+                        # 更新 scheduler
+                        self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+
                     for k in self.noise_scheduler.timesteps:
-                        # if k.item() < 2:
-                        #     k = torch.tensor(2, device=k.device, dtype=k.dtype)
-                        # if k.item() == 2:
-                        #     print("wzj")
-                        # predict noise
                         noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
 
                         if not torch.all(torch.isfinite(noise_pred)):
@@ -501,17 +597,17 @@ class ScaleDP(PreTrainedModel):
             # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
             timesteps = self.noise_scheduler.timesteps.tolist()
 #----------------------------------------------------------------------------------------------------------
-            # # 找到10的位置
-            # if 10 in timesteps and 0 in timesteps:
-            #     idx_10 = timesteps.index(10)
-            #     idx_0 = timesteps.index(0)
+            # 找到10的位置
+            if 10 in timesteps and 0 in timesteps:
+                idx_10 = timesteps.index(10)
+                idx_0 = timesteps.index(0)
 
-            #     # 替换 [10, 0] 为细化版本
-            #     refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
-            #     timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+                # 替换 [10, 0] 为细化版本
+                refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+                timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
 
-                # # 更新 scheduler
-                # self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+                # 更新 scheduler
+                self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
 #----------------------------------------------------------------------------------------------------------
 
             for k in self.noise_scheduler.timesteps:

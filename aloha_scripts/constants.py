@@ -41,6 +41,13 @@ TASK_CONFIGS = {
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     },
+    'anchor_based': { # for nav
+        'dataset_dir': [
+            "data/split_data/single_astar2"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
 }
 
 ### ALOHA fixed constants
