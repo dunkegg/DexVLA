@@ -347,7 +347,9 @@ class ScaleDP(PreTrainedModel):
             ]:
                 assert key in f
                 out[key] = f[key][()]
-            self.anchors = out["cands_cluster_centroids"]
+            self.anchors_np = out["cands_cluster_centroids"]
+        anchors_t = torch.from_numpy(self.anchors_np)
+        self.register_buffer("anchors_tensor", anchors_t, persistent=False)
 
 
 
@@ -516,7 +518,10 @@ class ScaleDP(PreTrainedModel):
 
             # === 1. 找到最近 anchor 并算 residual ===
             with torch.no_grad():
-                indices , nearest_anchor= self.get_nearest_anchor(actions, torch.from_numpy(self.anchors).float().to(actions.device))
+                ref_dtype = self.anchor_classifier.fc[0].weight.dtype
+                ref_device = actions.device
+                anchors = self.anchors_tensor.to(device=ref_device, dtype=ref_dtype)
+                indices , nearest_anchor= self.get_nearest_anchor(actions, anchors)
                 # one-hot label
                 anchor_labels = F.one_hot(indices, num_classes=self.num_anchors).float()  # [B, Ta, Na]
             residual = actions - nearest_anchor                        # 学 residual 而不是 action 本身
@@ -558,7 +563,10 @@ class ScaleDP(PreTrainedModel):
             # === 7. Anchor BCE loss ===
             bce_loss = 0.0
             if anchor_labels is not None:        # :param anchor_labels: one-hot anchor index labels, shape [B, num_anchors]
-                anchor_probs = self.anchor_classifier(hidden_states.mean(dim=1), torch.from_numpy(self.anchors).float().to(hidden_states.device))  # [B*num_noise, num_anchors]
+                ref_dtype = self.anchor_classifier.fc[0].weight.dtype
+                ref_device = hidden_states.device
+                anchors = self.anchors_tensor.to(device=ref_device, dtype=ref_dtype)
+                anchor_probs = self.anchor_classifier(hidden_states.mean(dim=1), anchors)  # [B*num_noise, num_anchors]
                 # 注意 anchor_labels 只重复 B 次，需要扩展到 [B*num_noise, num_anchors]
                 anchor_labels = anchor_labels.repeat(num_noise_samples, 1)
                 bce_loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -576,96 +584,13 @@ class ScaleDP(PreTrainedModel):
             output["steps"] = self.train_steps
             if self.train_steps % 250 ==0:
                 with torch.no_grad():
-                    B = 1
-                    Tp = self.num_queries
-                    action_dim = self.action_dim
-
-                    # initialize action from Guassian noise
-                    noisy_action = torch.randn((B, Tp, action_dim)).cuda()
-
-                    naction = noisy_action.to(dtype=hidden_states.dtype)
-                    # init scheduler
-                    self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
-
-                    # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
-                    timesteps = self.noise_scheduler.timesteps.tolist()
-
-                    # 找到10的位置
-                    if 10 in timesteps and 0 in timesteps:
-                        idx_10 = timesteps.index(10)
-                        idx_0 = timesteps.index(0)
-
-                        # 替换 [10, 0] 为细化版本
-                        refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
-                        timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
-
-                        # 更新 scheduler
-                        self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
-
-                    for k in self.noise_scheduler.timesteps:
-                        noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
-
-                        if not torch.all(torch.isfinite(noise_pred)):
-                            print(f"NaN in noise_pred at timestep {k}")
-                            break
-
-                        # inverse diffusion step (remove noise)
-                        step_result = self.noise_scheduler.step(
-                            model_output=noise_pred,
-                            timestep=k,
-                            sample=naction
-                        )
-                        if not torch.all(torch.isfinite(step_result.prev_sample)):
-                            print(f"NaN in naction at timestep {k}")
-                            break
-                        naction = step_result.prev_sample
-
+                    naction = self.inference(hidden_states=hidden_states, states=states)
                     output["reconstructed_action"] = naction  # 可视化用
             self.train_steps+=1
             return output
         else:  # inference time
-            B = 1
-            Tp = self.num_queries
-            action_dim = self.action_dim
 
-            # initialize action from Guassian noise
-            noisy_action = torch.randn((B, Tp, action_dim)).cuda()
-
-            naction = noisy_action.to(dtype=hidden_states.dtype)
-            # init scheduler
-            self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
-
-            # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
-            timesteps = self.noise_scheduler.timesteps.tolist()
-#----------------------------------------------------------------------------------------------------------
-            # 找到10的位置
-            if 10 in timesteps and 0 in timesteps:
-                idx_10 = timesteps.index(10)
-                idx_0 = timesteps.index(0)
-
-                # 替换 [10, 0] 为细化版本
-                refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
-                timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
-
-                # 更新 scheduler
-                self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
-#----------------------------------------------------------------------------------------------------------
-
-            for k in self.noise_scheduler.timesteps:
-                # predict noise
-                noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
-
-                # inverse diffusion step (remove noise)
-                step_result = self.noise_scheduler.step(
-                    model_output=noise_pred,
-                    timestep=k,
-                    sample=naction
-                )                        
-                if not torch.all(torch.isfinite(step_result.prev_sample)):
-                    print(f"NaN in naction at timestep {k}")
-                    break
-                naction = step_result.prev_sample
-
+            naction = self.inference(hidden_states=hidden_states, states=states)
             return naction
 
     def model_forward(self, x, t, global_cond, states):
@@ -708,6 +633,57 @@ class ScaleDP(PreTrainedModel):
         x = self.final_layer(x, c)  # (N, T, output_dim)
         return x
 
+    def inference(self, hidden_states, states):
+        B = 1
+        Tp = self.num_queries
+        action_dim = self.action_dim
+        ref_dtype = self.anchor_classifier.fc[0].weight.dtype
+        ref_device = hidden_states.device
+        anchors = self.anchors_tensor.to(device=ref_device, dtype=ref_dtype)
+        anchor_probs = self.anchor_classifier(hidden_states.mean(dim=1), anchors) 
+        anchor_idx = torch.argmax(anchor_probs, dim=-1) 
+        selected_anchor = anchors[anchor_idx]
+
+        # initialize action from Guassian noise
+        noisy_residual = torch.randn((B, Tp, action_dim)).cuda()
+
+        n_residual = noisy_residual.to(dtype=hidden_states.dtype)
+        # init scheduler
+        self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
+
+        # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
+        timesteps = self.noise_scheduler.timesteps.tolist()
+        #----------------------------------------------------------------------------------------------------------
+        # 找到10的位置
+        if 10 in timesteps and 0 in timesteps:
+            idx_10 = timesteps.index(10)
+            idx_0 = timesteps.index(0)
+
+            # 替换 [10, 0] 为细化版本
+            refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+            timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+
+            # 更新 scheduler
+            self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+        #----------------------------------------------------------------------------------------------------------
+
+        for k in self.noise_scheduler.timesteps:
+            # predict noise
+            noise_pred = self.model_forward(n_residual, k, global_cond=hidden_states, states=states)
+
+            # inverse diffusion step (remove noise)
+            step_result = self.noise_scheduler.step(
+                model_output=noise_pred,
+                timestep=k,
+                sample=n_residual
+            )                        
+            if not torch.all(torch.isfinite(step_result.prev_sample)):
+                print(f"NaN in n_residual at timestep {k}")
+                break
+            n_residual = step_result.prev_sample
+
+        naction = selected_anchor + noisy_residual
+        return naction
 #################################################################################
 #                   Sine/Cosine Positional Embedding Functions                  #
 #################################################################################
