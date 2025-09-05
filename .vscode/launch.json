@@ -178,7 +178,7 @@
           "CUDA_VISIBLE_DEVICES": "0",       
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
@@ -230,16 +230,16 @@
         "name": "goat follow",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/goat_follow.py",
+        "program": "${workspaceFolder}/goat_follow_copy.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
         ],
-        "python": "/home/wangzejin/miniconda3/envs/habitat/bin/python"
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },
     ]
   }
