@@ -56,7 +56,8 @@ def local2world(rel_local: np.ndarray,
 
         # yaw 反变换
         yaw_local = row[3]
-        yaw_world = wrap_pi(yaw_local + follow_yaw)
+        # yaw_world = wrap_pi(yaw_local + follow_yaw)
+        yaw_world = yaw_local + follow_yaw
         out[i, 3] = yaw_world
 
     return out.astype(np.float32)

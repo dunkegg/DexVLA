@@ -408,14 +408,14 @@ def walk_along_path_multi(
     sim.agents[0].set_state(follow_state)
 
 
-    follow_yaw, _ = quat_to_angle_axis(follow_state.rotation)
+    follow_yaw, w = quat_to_angle_axis(follow_state.rotation)
     obs = sim.get_sensor_observations(0)
 
 
     now = 0
     if robot is not None:
         robot.set_obs(obs['color_0_0'], now, save=True)
-        robot.set_world_pos(follow_state.position.x, follow_state.position.z, -follow_yaw, follow_state.position.y)
+        robot.set_world_pos(follow_state.position.x, follow_state.position.z, follow_yaw, follow_state.position.y)
 
     follow_timestep = 0
 
@@ -476,7 +476,7 @@ def walk_along_path_multi(
                 
             sample_fps = 1.3
             sample_fps = 3
-            plan_fps = 2
+            plan_fps = 4
             follow_size = 5
             output["sample_fps"] = sample_fps
             output["plan_fps"] = plan_fps
@@ -493,31 +493,16 @@ def walk_along_path_multi(
             position,yaw,quat = humanoid_agent.get_pose()
             if now - last_plan_time >= 1/plan_fps and now > 3:
                 last_plan_time = now
-                robot.eval_bc(now)
+                robot.eval_bc(now, position)
                 robot.save_obs(now, position)
                 # robot.compare_step(follow_size, max_move_dis)
 
             robot.ctrl_step(now, position)
 
-            # if time_step == len(human_path)-1:
-            #     step_range = int(1.5/(forward_speed*timestep_gap))
-            #     last_sample = 0
-            #     for i in range(step_range):
-            #         if (i/forward_speed)*timestep_gap - last_sample >= 1/sample_fps:
-            #             last_sample = (i/forward_speed)*timestep_gap
-            #             obs = sim.get_sensor_observations(0)
-            #             robot.set_obs(obs['color_0_0'], now, save=True)
-            #         robot.eval_bc()
-            #         position,yaw,quat = humanoid_agent.get_pose()
-            #         robot.save_obs(now, position)
-            #         robot.compare_step(follow_size, max_move_dis)
-                
-            #         if calculate_euclidean_distance(robot.get_state().position, goal_pos) < 2:
-            #             follow_success = True
-            #             break
 
-
-
+    for time_step in range(len(human_path), len(human_path)+6):
+        now = timestep_gap * time_step
+        robot.ctrl_step(now, position)
             
             
     if robot:

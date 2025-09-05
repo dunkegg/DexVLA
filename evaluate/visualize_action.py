@@ -208,6 +208,9 @@ from io import BytesIO
 from PIL import Image
 import math
 
+
+
+
 def plot_ctrl(now_time, world_actions, pid_pos, agent_pos, followed_pos, origin_pos,cur_image):
     """
     Args:
@@ -257,7 +260,10 @@ def plot_ctrl(now_time, world_actions, pid_pos, agent_pos, followed_pos, origin_
                  arrow_len * np.cos(pid_pos[2]+yaw_bias),
                  arrow_len * np.sin(pid_pos[2]+yaw_bias),
                  head_width=0.1, head_length=0.1, fc='orange', ec='orange')
-
+    axs[1].arrow(pid_dx, -pid_dy,
+                 arrow_len * np.cos(-pid_pos[2]+yaw_bias),
+                 arrow_len * np.sin(-pid_pos[2]+yaw_bias),
+                 head_width=0.1, head_length=0.1, fc='black', ec='black')
     # 跟随点
     follow_dx = followed_pos[0] - origin_pos[0]
     follow_dy = followed_pos[1] - origin_pos[1]

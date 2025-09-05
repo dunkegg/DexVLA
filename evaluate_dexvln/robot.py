@@ -19,7 +19,56 @@ from qwen2_vla.model_load_utils import load_model_for_eval
 from policy_heads import * 
 from qwen2_vla.utils.image_processing_qwen2_vla import *  
 
-def compute_yaw_from_xy(path_xyyaw):
+import magnum as mn
+import quaternion as qt 
+
+def adjust_yaw_sign(follow_world_actions, w_yaw, pos_cur, pos_goal, check_k=3):
+    """
+    修正 follow_world_actions 的 yaw 符号
+
+    follow_world_actions: ndarray, shape (N, 3) or (N, 4)，其中 [:,2] 是 yaw
+    w_yaw: 当前机器人 yaw (float)
+    pos_cur: [x, y] 当前坐标
+    pos_goal: [x, y] 目标坐标
+    check_k: 用轨迹前几个点来计算方向
+    """
+    yaws = follow_world_actions[:, 2].copy()
+
+    yaw0 = yaws[0]
+
+    # ---------------------------
+    # 1. 初步判断 yaw 是否对齐
+    if np.isclose(yaw0, w_yaw, atol=0.5):  # yaw 差不多（阈值可调）
+        return follow_world_actions  # 不变
+    elif np.isclose(yaw0 + w_yaw, 0, atol=0.5):
+        follow_world_actions[:, 2] = -yaws
+        return follow_world_actions
+    else:
+        # 初始 yaw 明显不对，进入进一步检查
+        pass
+
+    # ---------------------------
+    # 2. 方向检查（用当前位置 -> 目标向量 和 轨迹向量）
+    vec_goal = np.array(pos_goal) - np.array(pos_cur)
+    if np.linalg.norm(vec_goal) < 1e-6:
+        return follow_world_actions  # 当前位置和目标一样，直接返回
+
+    vec_traj = follow_world_actions[min(check_k, len(follow_world_actions)-1), :2] - follow_world_actions[0, :2]
+
+    # 归一化
+    vec_goal /= np.linalg.norm(vec_goal)
+    vec_traj /= np.linalg.norm(vec_traj)
+
+    cos_angle = np.dot(vec_goal, vec_traj)
+    angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
+
+    if angle <= np.pi / 2:  # 夹角小于等于90度 → 不取负
+        return follow_world_actions
+    else:
+        follow_world_actions[:, 2] = -yaws
+        return follow_world_actions
+
+def compute_yaw_from_xy(path_xyyaw, cur_yaw):
     xy = path_xyyaw[:, :2]  # 取 x, y
     yaw_list = []
     for i in range(len(xy)):
@@ -29,9 +78,22 @@ def compute_yaw_from_xy(path_xyyaw):
         else:  # 最后一个点用前一个点的方向
             dx = xy[i, 0] - xy[i-1, 0]
             dy = xy[i, 1] - xy[i-1, 1]
-        yaw = np.arctan2(dy, dx)  # -pi ~ pi
+        
+        seg_vec = mn.Vector3(dx, 0, dy)
+        direction = seg_vec.normalized()
+        orientation = direction / np.linalg.norm(direction) 
+        q_array = direction_to_combined_quaternion(orientation)
+        # quat = qt.quaternion(q_array[0],q_array[1], q_array[2], q_array[3])
+        quat = qt.quaternion(q_array[3],q_array[0], q_array[1], q_array[2])
+        yaw, _ = quat_to_angle_axis(quat) 
+        # yaw += math.pi/2
+        # yaw = np.arctan2(dy, dx)  # -pi ~ pi
         yaw_list.append(yaw)
+
+    yaw_diff = yaw_list[0] + cur_yaw
     yaw_array = np.array(yaw_list)
+    yaw_array = yaw_array - yaw_diff
+
     return np.hstack([xy, yaw_array[:, None]])  # 拼回 [x, y, yaw]
 
 def pre_process(robot_state_value, key, stats):
@@ -176,6 +238,36 @@ def smooth_yaw(actions, window_size=3):
     final = np.array([np.array([pos[0], pos[1], yaw]) for pos, yaw in smoothed_actions])
     return final
 
+
+def adjust_yaw_sign2(follow_world_actions, yaw_cmd):
+    follow_world_actions = np.delete(follow_world_actions, 1, axis=1)
+    """
+    修正 follow_world_actions 的 yaw 符号
+
+    follow_world_actions: ndarray, shape (N, 3) or (N, 4)，其中 [:,2] 是 yaw
+    w_yaw: 当前机器人 yaw (float)
+    pos_cur: [x, y] 当前坐标
+    pos_goal: [x, y] 目标坐标
+    check_k: 用轨迹前几个点来计算方向
+    """
+
+    vec_traj = follow_world_actions[-1, :2] - follow_world_actions[0, :2]
+    if np.linalg.norm(vec_traj) < 1e-6:
+        return yaw_cmd  # 轨迹几乎没动，直接返回
+    # yaw_cmd 转方向向量（注意加 yaw_bias）
+    yaw_bias = math.pi / 2
+    vec_1 = np.array([np.cos(yaw_cmd + yaw_bias), np.sin(yaw_cmd + yaw_bias)])
+    vec_2 = np.array([np.cos(-yaw_cmd + yaw_bias), np.sin(-yaw_cmd + yaw_bias)])
+
+    # 计算两个方向与轨迹的相似度（点积）
+    dot1 = np.dot(vec_1, vec_traj)
+    dot2 = np.dot(vec_2, vec_traj)
+
+    # 选择更接近轨迹方向的 yaw
+    if dot1 >= dot2:
+        return yaw_cmd  # 保持不变
+    else:
+        return -yaw_cmd  # 翻转符号
 
 class FakeRobotEnv():
     """Fake robot environment used for testing model evaluation, please replace this to your real environment."""
@@ -428,21 +520,15 @@ class FakeRobotEnv():
             self.set_state(next_action[0], quaternion)
             self.step_idx = i
 
-            
 
     def ctrl_step(self, now_time, followed_position):
         if not self.follower or len(self.world_actions)==0:
             return
         
         agent_pos = [self.w_x,self.w_y,self.w_yaw]
-        x_cmd, y_cmd, yaw_cmd = self.follower.step(now_time, self.w_x, self.w_y, self.w_yaw)
+        x_cmd, y_cmd, yaw_cmd, idx = self.follower.step(now_time, self.w_x, self.w_y, self.w_yaw)
         # yaw_cmd = -yaw_cmd
-        self.w_x = x_cmd
-        self.w_y = y_cmd
-        self.w_yaw = yaw_cmd
-        pos = to_vec3([self.w_x, self.w_height, self.w_y])
-        quat = quat_from_angle_axis(self.w_yaw , np.array([0, 1, 0]))
-        self.set_state(pos, quat)
+        yaw_cmd = adjust_yaw_sign2(self.world_actions, yaw_cmd)
 
         pid_pos = [x_cmd, y_cmd, yaw_cmd]
         followed_pos = [followed_position.x,followed_position.z]
@@ -452,9 +538,20 @@ class FakeRobotEnv():
         plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}","PID")
         os.makedirs(plot_dir, exist_ok=True)
         imageio.imwrite(f'{plot_dir}/{round(now_time, 1)}.png', ctrl_img_np)
+        print(f"now time: {now_time}, yaw cmd: {yaw_cmd},  traj yaw: {self.world_actions[idx][3]}, idx:{idx},  cur_yaw: {self.w_yaw }")
+        print(f"whole traj: {self.world_actions[:,3] }")
+        print("--------------------------------------------------------")
+
+
+        self.w_x = x_cmd
+        self.w_y = y_cmd
+        self.w_yaw = yaw_cmd
+        pos = to_vec3([self.w_x, self.w_height, self.w_y])
+        quat = quat_from_angle_axis(self.w_yaw , np.array([0, 1, 0]))
+        self.set_state(pos, quat)
         
 
-    def eval_bc(self, now_time):
+    def eval_bc(self, now_time, followed_position):
 
         assert self.instruction  is not None, "raw lang is None!!!!!!"
         set_seed(0)
@@ -533,10 +630,10 @@ class FakeRobotEnv():
 
             local_actions = np.insert(local_actions, 1, 0, axis=1)
             
-            raw_yaw_world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),cur_yaw, type=1)
+            raw_yaw_world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),self.w_yaw, type=1)
             
             raw_yaw_world_actions = np.delete(raw_yaw_world_actions, 1, axis=1)
-            world_actions = compute_yaw_from_xy(raw_yaw_world_actions)
+            world_actions = compute_yaw_from_xy(raw_yaw_world_actions, self.w_yaw)
             world_actions = np.insert(world_actions, 1, 0, axis=1)
             self.world_actions = world_actions
 
@@ -557,14 +654,14 @@ class FakeRobotEnv():
                 follow_world_actions = [[self.w_x, self.w_y, self.w_yaw]]
             else:
                 follow_world_actions = np.delete(world_actions, 1, axis=1)
-                follow_world_actions[:,2] = -follow_world_actions[:,2] 
+                # follow_world_actions = adjust_yaw_sign(follow_world_actions, self.w_yaw, [self.w_x, self.w_y],  [followed_position.x,followed_position.z])
 
-            self.follower = TrajectoryFollower(follow_world_actions, total_time=1.5, 
+            self.follower = TrajectoryFollower(follow_world_actions, total_time=0.75, 
                                                kp_xy=1.0, ki_xy=0.0, kd_xy=0.0,
                                                kp_yaw=0.5, ki_yaw=0.0, kd_yaw=0.0)
             
             self.follower.reset(now_time)
-
+            self.world_actions = np.insert(follow_world_actions, 1, self.height, axis=1)
             
 
             self.action_queue.extend(

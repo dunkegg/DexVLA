@@ -34,7 +34,7 @@ class ArcLengthPath:
         dyaw = np.arctan2(np.sin(yaw1 - yaw0), np.cos(yaw1 - yaw0))
         yaw = yaw0 + t * dyaw
 
-        return x, y, yaw
+        return x, y, yaw, idx
 
 
 class TrajectoryFollower:
@@ -82,7 +82,7 @@ class TrajectoryFollower:
         elapsed = current_time - self.start_time
         progress = min(elapsed / self.total_time, 1.0)
         s_target = progress * self.path.s_total
-        x_ref, y_ref, yaw_ref = self.path._interp(s_target)
+        x_ref, y_ref, yaw_ref, idx = self.path._interp(s_target)
 
         # ---------------- XY PID ----------------
         dx = x_ref - x_cur
@@ -122,4 +122,4 @@ class TrajectoryFollower:
 
         yaw_cmd = yaw_ref
 
-        return x_cmd, y_cmd, yaw_cmd
+        return x_cmd, y_cmd, yaw_cmd, idx
