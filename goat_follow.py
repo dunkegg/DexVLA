@@ -169,7 +169,7 @@ if __name__ == '__main__':
         # humanoid_name = folders[all_index]
 
     
-        humanoid_name = "female_0"
+        humanoid_name = "female_6"
         follow_description = id_dict[humanoid_name]["description"]
         # 原主目标人
         
@@ -181,7 +181,8 @@ if __name__ == '__main__':
             #     # break
             #     # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
             #     interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
-            for interferer_name in ["female_2", "female_3"]:
+            # for interferer_name in ["female_2", "female_3"]:
+            for interferer_name in ["male_5"]:
                 interferer_description = id_dict[interferer_name]["description"]
                 interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data, name = interferer_name, description = interferer_description, is_target=False)
                 all_interfering_humanoids.append(interferer)

@@ -175,7 +175,7 @@
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
-          "CUDA_VISIBLE_DEVICES": "0",       
+          "CUDA_VISIBLE_DEVICES": "2",       
         },
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi.yaml"
@@ -237,7 +237,7 @@
         "env": {
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },
