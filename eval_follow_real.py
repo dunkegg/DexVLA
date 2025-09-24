@@ -265,7 +265,7 @@ if __name__ == '__main__':
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
         # "model_path": "OUTPUT/qwen2_follow_real_finetune/checkpoint-10000",
-        "model_path": "/mnt/pfs/3zpd5q/code/train/DexVLA/OUTPUT/qwen2_follow_real/checkpoint-4000",
+        "model_path": "OUTPUT/qwen2_new_follow_sample/checkpoint-20000",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune

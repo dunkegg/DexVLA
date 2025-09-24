@@ -8,7 +8,7 @@ import json
 import logging
 import pathlib
 from typing import Dict, Optional, Sequence, List
-from transformers import CLIPImageProcessor, SiglipImageProcessor
+# from transformers import CLIPImageProcessor, SiglipImageProcessor
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig, AutoProcessor
 import warnings
 import os
