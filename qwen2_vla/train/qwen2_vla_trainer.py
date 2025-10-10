@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.utils.data import Sampler, DataLoader, BatchSampler, Dataset
 
 from transformers.trainer import *
-from diffusers.training_utils import EMAModel
+# from diffusers.training_utils import EMAModel
 import math
 import sys
 from transformers import Trainer

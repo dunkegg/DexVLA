@@ -260,7 +260,7 @@ class ScaleDP(PreTrainedModel):
         from diffusers.schedulers.scheduling_ddim import DDIMScheduler
         self.num_inference_timesteps = config.num_inference_timesteps
         # self.proj_to_action = nn.Identity()
-        self.prediction_type = 'sample'
+        self.prediction_type = 'epsilon'
         self.noise_scheduler = DDIMScheduler(
             num_train_timesteps=config.num_train_timesteps, # 100
             beta_schedule='squaredcos_cap_v2',
@@ -500,20 +500,23 @@ class ScaleDP(PreTrainedModel):
 
             # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
             timesteps = self.noise_scheduler.timesteps.tolist()
+            
+            
 #----------------------------------------------------------------------------------------------------------
-            # # 找到10的位置
-            # if 10 in timesteps and 0 in timesteps:
-            #     idx_10 = timesteps.index(10)
-            #     idx_0 = timesteps.index(0)
+            # 找到10的位置
+            if 10 in timesteps and 0 in timesteps:
+                idx_10 = timesteps.index(10)
+                idx_0 = timesteps.index(0)
 
-            #     # 替换 [10, 0] 为细化版本
-            #     refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
-            #     timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
+                # 替换 [10, 0] 为细化版本
+                refined = list(range(10, -1, -1))  # [10, 9, ..., 0]
+                timesteps = timesteps[:idx_10] + refined + timesteps[idx_0+1:]
 
-                # # 更新 scheduler
-                # self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
+                # 更新 scheduler
+                self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
 #----------------------------------------------------------------------------------------------------------
-
+            # print("!!!!!!!!!!!!!!!timesteps:", self.noise_scheduler.timesteps)
+            # print("timesteps dtype:", self.noise_scheduler.timesteps.dtype, " device:", getattr(self.noise_scheduler.timesteps, "device", None))
             for k in self.noise_scheduler.timesteps:
                 # predict noise
                 noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
@@ -523,7 +526,16 @@ class ScaleDP(PreTrainedModel):
                     model_output=noise_pred,
                     timestep=k,
                     sample=naction
-                )                        
+                )
+                # print(type(step_result), step_result.keys() if isinstance(step_result, dict) else step_result)
+                # print(naction.dtype, naction.device)
+                # print(noise_pred.dtype, noise_pred.device)
+                # print(hidden_states.dtype, hidden_states.device)          
+                # if k == self.noise_scheduler.timesteps[0] or k == self.noise_scheduler.timesteps[-1]:
+                # print(f"t={k} noise_pred mean {noise_pred.mean().item():.4f}, std {noise_pred.std().item():.4f}, "
+                #     f"naction mean {naction.mean().item():.4f}, std {naction.std().item():.4f}")
+                # if torch.allclose(step_result.prev_sample, naction):
+                #     print("⚠️ step() returned same sample at t", k)
                 if not torch.all(torch.isfinite(step_result.prev_sample)):
                     print(f"NaN in naction at timestep {k}")
                     break

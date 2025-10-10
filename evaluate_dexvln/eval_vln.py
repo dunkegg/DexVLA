@@ -82,8 +82,9 @@ class qwen2_vla_policy:
         if len(curr_image.shape) == 5:  # 1,2,3,270,480
             curr_image = curr_image.squeeze(0)
 
-        messages = self.datastruct_droid2qwen2vla(raw_lang)
+        
         image_data = torch.chunk(curr_image, curr_image.shape[0], dim=0)  # top, left_wrist, right_wrist
+        messages = self.datastruct_droid2qwen2vla(raw_lang, len_image=len(image_data))
         image_list = []
         for i, each in enumerate(image_data):
             ele = {}

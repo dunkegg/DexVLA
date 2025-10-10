@@ -165,6 +165,8 @@ eval_plot*
 eval_real*
 results*
 plots/
+sample/*
+test/*
 # Pyre type checker
 .pyre/
 
