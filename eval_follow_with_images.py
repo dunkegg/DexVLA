@@ -259,7 +259,7 @@ def get_history_frames(frame_paths, idx, n_frames):
 from pathlib import Path
 def collect_n_frame_paths(image_folder, n_frames):
     image_folder = Path(image_folder)
-    image_paths = list(image_folder.glob("*.png"))
+    image_paths = list(image_folder.glob("*.jpg"))
     image_paths = sorted(
         image_paths,
         key=lambda x: float(x.stem)  # .stem 去掉后缀，只保留 '0.0'
@@ -277,7 +277,7 @@ def collect_n_frame_paths(image_folder, n_frames):
         grouped_paths.append([str(p) for p in frames])  # 转换为字符串
 
     # 获取输出目录：与 image_folder 同级，名为 processed_frames
-    output_dir = image_folder.parent / "predicted"
+    output_dir = image_folder.parent / "predicted_low_step"
     output_dir.mkdir(exist_ok=True)
 
     return grouped_paths, str(output_dir)
@@ -288,7 +288,8 @@ if __name__ == '__main__':
     query_frequency = 30
     policy_config = {
         #### 1. Specify path to trained DexVLA(Required)#############################
-        "model_path": "OUTPUT/single_follow_normal/checkpoint-20000",
+        "model_path": "OUTPUT/qwen2_follow_real/checkpoint-4000",
+        # "model_path": "OUTPUT/qwen2_new_follow_sample/checkpoint-20000",
         #############################################################################
         "model_base": None, # only use for lora finetune
         "enable_lora": False, # only use for lora finetune
@@ -314,10 +315,9 @@ if __name__ == '__main__':
     policy = qwen2_vla_policy(policy_config)
     #######################################
     import os
-    for k in range(0,23):
-        folder_path = f'eval_plot8/episode_{k}/sample'
-        if not os.path.exists(folder_path):
-            continue
+    for k in range(35):
+        folder_path = f'test/sample{k}'
+
         grouped_paths, output_root =  collect_n_frame_paths(folder_path,8)
         os.makedirs(output_root, exist_ok=True)
         for i, frames in enumerate(grouped_paths):
@@ -325,8 +325,6 @@ if __name__ == '__main__':
             raw_lang = "follow the human"
             raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
             
-            
-
             compressed = False
             images = []
             rank = 0
@@ -344,4 +342,3 @@ if __name__ == '__main__':
             out_path = os.path.join(output_root, Path(frames[-1]).name)
             cv2.imwrite(out_path, cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR))
         # break
-

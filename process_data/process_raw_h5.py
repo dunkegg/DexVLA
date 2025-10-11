@@ -433,11 +433,11 @@ if __name__=="__main__":
     args.frames_dir ="data/frames/single_follow"
     args.dst_dir = "data/proc_data/single_follow"
 
-    # args.src_dir = "data/raw_data/multi_follow_hdf5"
-    # args.frames_dir ="data/frames/multi_follow"
-    # args.dst_dir = "data/proc_data/multi_follow_temp"
+    args.src_dir = "data/raw_data/multi_follow_hdf5"
+    args.frames_dir ="data/frames/multi_follow"
+    args.dst_dir = "data/proc_data/multi_follow"
 
-    args.viz = "results/single_follow"
+    args.viz = "results/multi_follow"
     args.history = 10
     viz=Path(args.viz) if args.viz else None
     main(Path(args.src_dir), Path(args.frames_dir), Path(args.dst_dir), viz, args.history)

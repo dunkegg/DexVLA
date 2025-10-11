@@ -134,10 +134,10 @@ if __name__ == '__main__':
     success_count = 0
     episodes_count = 0
     jump_idx = get_max_episode_number(img_output_dir)+1
-    jump_idx = 25
+    jump_idx = 0
     for file_name, content in sorted(data.items()):
-        if episodes_count > max_episodes:
-            break
+        # if episodes_count > max_episodes:
+        #     break
 
         structured_data,  filtered_episodes = process_episodes_and_goals(content)
         
@@ -193,8 +193,8 @@ if __name__ == '__main__':
         print("begin")
         for episode_idx, episode_data in enumerate(tqdm(episodes)):
             episode_id = episode_data["episode_id"]
-            if episodes_count > max_episodes:
-                break
+            # if episodes_count > max_episodes:
+            #     break
 
             if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl"):
                 print(f"{current_scene} :  {episode_id} in blacklist")
@@ -238,22 +238,22 @@ if __name__ == '__main__':
                     interfering_humanoid.reset_path(interfering_path)
                 
 
-            # try:
-            output_data = walk_along_path_multi(
-                all_index=all_index,
-                sim=simulator,
-                humanoid_agent=target_humanoid,
-                human_path=followed_path,
-                fps=10,
-                forward_speed=human_speed,
-                timestep_gap = 1/human_fps, 
-                interfering_humanoids=interfering_humanoids,
-                robot = agilex_bot
-            )
+            try:
+                output_data = walk_along_path_multi(
+                    all_index=all_index,
+                    sim=simulator,
+                    humanoid_agent=target_humanoid,
+                    human_path=followed_path,
+                    fps=10,
+                    forward_speed=human_speed,
+                    timestep_gap = 1/human_fps, 
+                    interfering_humanoids=interfering_humanoids,
+                    robot = agilex_bot
+                )
 
-            # except Exception as e:
-            #     print(e)
-            #     continue
+            except Exception as e:
+                print(e)
+                continue
 
             save_output_to_h5(output_data, f"data/raw_data/multi_follow_hdf5/episode_{all_index}.hdf5")
             if all_index < 50:

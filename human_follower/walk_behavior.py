@@ -500,9 +500,9 @@ def walk_along_path_multi(
             robot.ctrl_step(now, position)
 
 
-    for time_step in range(len(human_path), len(human_path)+6):
-        now = timestep_gap * time_step
-        robot.ctrl_step(now, position)
+    # for time_step in range(len(human_path), len(human_path)+6):
+    #     now = timestep_gap * time_step
+    #     robot.ctrl_step(now, position)
             
             
     if robot:

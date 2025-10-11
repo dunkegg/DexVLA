@@ -261,8 +261,8 @@ class ScaleDP(PreTrainedModel):
         self.num_inference_timesteps = config.num_inference_timesteps
         # self.proj_to_action = nn.Identity()
         # self.prediction_type = 'v_prediction'
-        self.prediction_type = 'sample'
-        # self.prediction_type = 'epsilon'
+        # self.prediction_type = 'sample'
+        self.prediction_type = 'epsilon'
         self.noise_scheduler = DDIMScheduler(
             num_train_timesteps=config.num_train_timesteps, # 100
             beta_schedule='squaredcos_cap_v2',
@@ -499,6 +499,7 @@ class ScaleDP(PreTrainedModel):
             naction = noisy_action.to(dtype=hidden_states.dtype)
             # init scheduler
             self.noise_scheduler.set_timesteps(self.num_inference_timesteps)
+            # self.noise_scheduler.set_timesteps(10)
 
             # 原始 timesteps，比如：tensor([90, 80, 70, ..., 20, 10, 0])
             timesteps = self.noise_scheduler.timesteps.tolist()
@@ -515,7 +516,7 @@ class ScaleDP(PreTrainedModel):
                 # 更新 scheduler
                 self.noise_scheduler.timesteps = torch.tensor(timesteps, device=hidden_states.device)
 #----------------------------------------------------------------------------------------------------------
-
+            print(f"timesteps for inference: {self.noise_scheduler.timesteps}")
             for k in self.noise_scheduler.timesteps:
                 # predict noise
                 noise_pred = self.model_forward(naction, k, global_cond=hidden_states, states=states)
