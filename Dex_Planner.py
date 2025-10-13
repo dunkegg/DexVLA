@@ -20,6 +20,7 @@ from geometry_msgs.msg import Twist
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
+import imageio
 import torch
 from evaluate_dexvln.eval_vln import process_obs, qwen2_vla_policy
 from data_utils.utils import set_seed
@@ -28,23 +29,70 @@ def angle_mod(x):
     return (x + np.pi) % (2 * np.pi) - np.pi
 
 class PathFinderController:
-    def __init__(self, Kp_rho=0.8, Kp_alpha=1.0, Kp_beta=-0.3):
-        self.Kp_rho = Kp_rho
-        self.Kp_alpha = Kp_alpha
-        self.Kp_beta = Kp_beta
+    def __init__(self, Kp=0.8, Ki=0.0, Kd=0.1,
+                 max_v=0.3, max_w=1.0,
+                 max_acc_v=0.5, max_acc_w=0.5, dt=0.05):
+        """
+        单点 PID 控制器
+        Kp/Ki/Kd: yaw 方向 PID 参数
+        max_v: 最大线速度
+        max_w: 最大角速度
+        max_acc_v: 最大线加速度
+        max_acc_w: 最大角加速度
+        dt: 控制周期
+        """
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.max_v = max_v
+        self.max_w = max_w
+        self.max_acc_v = max_acc_v
+        self.max_acc_w = max_acc_w
+        self.dt = dt
+
+        self.prev_v = 0.0
+        self.prev_w = 0.0
+        self.integral_error = 0.0
+        self.prev_yaw_error = 0.0
 
     def calc_control_command(self, x_diff, y_diff, theta, theta_goal):
-        rho = np.hypot(x_diff, y_diff)
-        v = self.Kp_rho * rho
-        alpha = angle_mod(np.arctan2(y_diff, x_diff) - theta)
-        beta = angle_mod(theta_goal - theta - alpha)
+        """
+        x_diff, y_diff: 当前点到目标点的相对坐标
+        theta: 当前朝向
+        theta_goal: 目标朝向（yaw）
+        返回: rho, v, w
+        """
+        rho = np.hypot(x_diff, y_diff)           # 距离误差
+        target_yaw = np.arctan2(y_diff, x_diff)  # 朝向目标点角度
+        yaw_error = angle_mod(target_yaw - theta)
+        beta = angle_mod(theta_goal - theta - yaw_error)
 
-        if alpha > np.pi / 2 or alpha < -np.pi / 2:
-            alpha = angle_mod(np.arctan2(-y_diff, -x_diff) - theta)
-            beta = angle_mod(theta_goal - theta - alpha)
-            v = -v
+        # PID 控制角速度
+        self.integral_error += yaw_error * self.dt
+        derivative = (yaw_error - self.prev_yaw_error) / self.dt
+        w_cmd = self.Kp * yaw_error + self.Ki * self.integral_error + self.Kd * derivative
+        w_cmd = np.clip(w_cmd, -self.max_w, self.max_w)
+        self.prev_yaw_error = yaw_error
 
-        w = self.Kp_alpha * alpha + self.Kp_beta * beta
+        # 如果角度误差大，先旋转
+        if abs(yaw_error) > np.pi / 4:
+            v_cmd = 0.0
+        else:
+            v_cmd = min(self.max_v, rho)
+
+        # 线速度加速度限制
+        dv = v_cmd - self.prev_v
+        dv = np.clip(dv, -self.max_acc_v * self.dt, self.max_acc_v * self.dt)
+        v = self.prev_v + dv
+
+        # 角速度加速度限制
+        dw = w_cmd - self.prev_w
+        dw = np.clip(dw, -self.max_acc_w * self.dt, self.max_acc_w * self.dt)
+        w = self.prev_w + dw
+
+        self.prev_v = v
+        self.prev_w = w
+
         return rho, v, w
 
 class DexPlanner:
@@ -61,6 +109,7 @@ class DexPlanner:
         self.current_position = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0}
         self.history_obs = deque(maxlen=max_history)
         self.obs = None
+        self.inference_action = None
         self.history_lock = threading.Lock()
         self.last_save_time = 0.0
         self.save_freq = save_freq
@@ -73,11 +122,12 @@ class DexPlanner:
         self.reference_frame = None
         self.local_target = None
         self.reference_lock = threading.Lock()
-        
         # 目标点状态管理
+        self.linear_x = 0.0
+        self.w_angular = 0.0
         self.target_reached = False
         self.need_new_target = True  # 初始需要目标点
-
+        self.video_writer = None
         # ROS订阅发布
         self.image_sub = rospy.Subscriber("/realsense_head/color/image_raw", Image, self.image_callback)
         self.odom_sub = rospy.Subscriber("/Odometry", Odometry, self.odom_callback)
@@ -112,6 +162,8 @@ class DexPlanner:
         except RuntimeError as e:
             rospy.logerr(f"ros_image_to_cv2 Error: {e}")
             return
+
+        self.visualize_trajectory(cv_image, self.inference_action)
         # rospy.loginfo(f"images_len{cv_image.shape}")
         now = time.time()
         if now - self.last_save_time >= self.save_freq:
@@ -124,6 +176,62 @@ class DexPlanner:
                 #     rospy.loginfo("history3")
                 #     self.history_obs.append(buf.tobytes())
             self.last_save_time = now
+
+    def visualize_trajectory(self, cv_image, all_actions):
+        """
+        在图像上绘制推理轨迹，并以固定10Hz保存视频帧
+        all_actions: np.ndarray of shape (N, 3) -> [x, y, yaw]
+        """
+        if cv_image is None or all_actions is None:
+            return
+
+        # 记录时间控制帧率
+        now = time.time()
+        if not hasattr(self, "last_video_write_time"):
+            self.last_video_write_time = 0.0
+        if now - self.last_video_write_time < 0.1:  # 10Hz 写帧
+            return
+        self.last_video_write_time = now
+
+        # 拷贝原图
+        img = cv_image.copy()
+        h, w, _ = img.shape
+
+        # 定义图像底部中心为机器人中心
+        center_x, center_y = w // 2, h - 1
+        scale = 50.0  # 每米多少像素，可调
+        
+        # 绘制轨迹
+        for i in range(len(all_actions) - 1):
+            x1, y1 = all_actions[i, :2]
+            x2, y2 = all_actions[i + 1, :2]
+            p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
+            p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
+            cv2.line(img, p1, p2, (0, 255, 0), 2)
+
+        # 绘制机器人中心点
+        cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)
+
+        text = f"Linear: {self.linear_x:.2f} m/s | Angular: {self.w_angular:.2f} rad/s"
+        cv2.rectangle(img, (10, 10), (450, 50), (0, 0, 0), -1)
+        cv2.putText(img, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
+        # 初始化 imageio 视频写入器
+        if self.video_writer is None:
+            os.makedirs("result", exist_ok=True)
+            video_path = "result/inference_trajectory.mp4"
+            # 使用 imageio 创建视频写入器
+            self.video_writer = imageio.get_writer(video_path, fps=10, codec='libx264', quality=8)
+            rospy.loginfo(f"[visualize_trajectory] 使用 imageio 视频保存路径: {video_path}")
+
+        # 写入视频帧（10Hz）- imageio 需要 RGB 格式
+        try:
+            # 将 BGR 转换为 RGB
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            self.video_writer.append_data(img_rgb)
+        except Exception as e:
+            rospy.logerr(f"[visualize_trajectory] 写入视频帧失败: {e}")
+
 
     def odom_callback(self, msg):
         """里程计回调函数"""
@@ -158,12 +266,16 @@ class DexPlanner:
         if local_point is None or reference_frame is None:
             return None
             
-        local_x, local_y, local_z, local_yaw = local_point
+        local_x, local_y, local_yaw = local_point
+        #
+        local_x, local_y = local_y, -local_x
+        #
+
         ref_x, ref_y, ref_z, ref_yaw = reference_frame['x'], reference_frame['y'], reference_frame['z'], reference_frame['yaw']
         
         global_x = ref_x + local_x * math.cos(ref_yaw) - local_y * math.sin(ref_yaw)
         global_y = ref_y + local_x * math.sin(ref_yaw) + local_y * math.cos(ref_yaw)
-        global_z = ref_z + local_z
+        global_z = ref_z
         global_yaw = angle_mod(ref_yaw + local_yaw)
         
         return [global_x, global_y, global_z, global_yaw]
@@ -191,7 +303,7 @@ class DexPlanner:
             
             current_local = self.global_to_local(
                 [self.current_position['x'], self.current_position['y'], 
-                 self.current_position['z'], self.current_position['yaw']],
+                self.current_position['z'], self.current_position['yaw']],
                 self.reference_frame
             )
             
@@ -199,23 +311,30 @@ class DexPlanner:
                 self.stop()
                 return
             
-            x_diff = self.local_target[0] - current_local[0]
-            y_diff = self.local_target[1] - current_local[1]
+            x_diff = self.current_target[0] - current_local[0]
+            y_diff = self.current_target[1] - current_local[1]
             theta = current_local[3]
-            theta_goal = self.local_target[3]
-
+            theta_goal = self.current_target[2]
+            # rospy.loginfo(f"x_diff: {x_diff}, y_diff {y_diff}, theta {current_local[3]}, theta_goal{self.current_target[2]}")
         rho, v, w = self.controller.calc_control_command(x_diff, y_diff, theta, theta_goal)
-        v = np.clip(v, -self.MAX_LINEAR_SPEED, self.MAX_LINEAR_SPEED)
-        w = np.clip(w, -self.MAX_ANGULAR_SPEED, self.MAX_ANGULAR_SPEED)
+
+        # 当距离过小停止
+        if rho < 0.05:
+            v = 0.0
+            w = 0.0
+
+        self.linear_x = v
+        self.w_angular = w
 
         twist = Twist()
         twist.linear.x = v
         twist.angular.z = w
         self.cmd_pub.publish(twist)
-        
-        # 记录控制状态（限流输出）
-        rospy.loginfo_throttle(2.0, 
-            f"[Control] 局部误差: dist={rho:.3f}, v={v:.3f}, w={w:.3f}")
+
+        rospy.loginfo_throttle(1.0, f"[Control] rho={rho:.3f}, alpha={angle_mod(np.arctan2(y_diff, x_diff) - theta):.3f}, "
+                                    f"beta={angle_mod(theta_goal - theta - angle_mod(np.arctan2(y_diff, x_diff) - theta)):.3f}, "
+                                    f"v={v:.3f}, w={w:.3f}")
+
 
     def inference_new_target(self, observations):
 
@@ -252,8 +371,8 @@ class DexPlanner:
             img = cv2.resize(img, (320,240))
             # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             # img = img.astype(np.float32) /255.0
-            cv2.imshow("Image window", img)
-            cv2.waitKey(3)
+            # cv2.imshow("Image window", img)
+            # cv2.waitKey(3)
             # plt.savefig
             images.append(img)
 
@@ -279,13 +398,16 @@ class DexPlanner:
                 all_actions = all_actions.squeeze(0)  #
                 all_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
                 all_actions = np.array([post_process(raw_action) for raw_action in all_actions])
+            
+            self.inference_action = all_actions
 
+            return all_actions[-1]
             # timestamp = time.time_ns() // 1_000_000
             # rospy.loginfo(f"traj: {all_actions}")
             # cv2.imshow("Image window", images[-1])
             # plt.imshow(cv2.cvtColor(images[-1], cv2.COLOR_BGR2RGB))
-            self.visualize_data(all_actions, time.time() ,images)
-            return [0.0, 0.0, 0.0, 0.0]  # [x, y, z, yaw]
+            # self.visualize_data(all_actions, time.time() ,images)
+            # return [0.0, 0.0, 0.0, 0.0]  # [x, y, z, yaw]
 
     def target_update_loop(self):
         cur_time = time.time()
@@ -308,8 +430,9 @@ class DexPlanner:
                     
                     with self.target_lock:
                         self.current_target = global_target
-            
-
+                        self.save_obs_traj(self.inference_action, self.obs)
+                        rospy.loginfo(f"model point {self.inference_action[-1]}")
+                        rospy.loginfo(f"pid point {self.current_target}")
                 last_plan_time = cur_time
 
 
@@ -318,69 +441,46 @@ class DexPlanner:
         twist = Twist()
         self.cmd_pub.publish(twist)
 
-    def visualize_data(self,local_traj, timestamp, history_obs=None):
-        """
-            local_traj: [x,y, yaw] - list of arrays or numpy array
-            robot_pos: [x, y, z] - numpy array
-            robot_yaw: yaw - scalar or array
-        """
-        """可视化局部轨迹、RGB图像并保存"""
-        # 创建图形，调整为2行1列布局
+    def save_obs_traj(self, local_traj, history_obs):
+        """可视化局部轨迹和RGB图像并保存到result文件夹"""
+        if not os.path.exists("result"):
+            os.makedirs("result")
+
+        timestamp = time.time()
         fig = plt.figure(figsize=(18, 12))
-        gs = GridSpec(2, 1, figure=fig)  # 变为2行1列布局
-        
-        # 处理 local_traj - 转换为 numpy array
-        if isinstance(local_traj, list):
-            if len(local_traj) > 0 and isinstance(local_traj[0], np.ndarray):
-                local_traj = np.array(local_traj)
-            else:
-                local_traj = np.array(local_traj)
-        
-        # 1. 绘制RGB图像序列（修正部分）
+        gs = GridSpec(2, 1, figure=fig)
+
+        # 1. 绘制RGB图像序列
         ax1 = fig.add_subplot(gs[0, 0])
         if history_obs and len(history_obs) > 0:
             frames_to_show = history_obs[-10:] if len(history_obs) >= 10 else history_obs
             n_frames = len(frames_to_show)
-            
             n_cols = min(5, n_frames)
-            n_rows = math.ceil(n_frames / n_cols)
+            n_rows = (n_frames + n_cols - 1) // n_cols
             inner_gs = GridSpecFromSubplotSpec(n_rows, n_cols, subplot_spec=gs[0, 0])
-            
-            # 按从新到旧顺序显示（最新帧在最前面）
-            for i, img_bytes in enumerate(reversed(frames_to_show)):  # 注意：reversed保证新帧在前
+            for i, img in enumerate(reversed(frames_to_show)):
                 ax = fig.add_subplot(inner_gs[i])
-                try:
-                    img = Image.open(io.BytesIO(img_bytes))  # 现在 io 模块已导入
-                    ax.imshow(np.array(img))  # 显式转换为NumPy数组
-                    ax.set_title(f"Frame {n_frames - i}")  # 帧编号从新到旧
-                except Exception as e:
-                    ax.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center')
+                ax.imshow(img[..., ::-1] if img.ndim == 3 else img, aspect='auto')
+                ax.set_title(f"Frame {n_frames - i}")
                 ax.axis('off')
         else:
             ax1.text(0.5, 0.5, "No image data", ha='center', va='center')
         ax1.set_title("Recent Camera Frames (Newest to Oldest)")
         ax1.axis('off')
-        
-        # 2. 绘制局部轨迹 - 显示机器人朝向和轨迹相对位置
+
+        # 2. 绘制局部轨迹
         ax2 = fig.add_subplot(gs[1, 0])
-        if hasattr(local_traj, 'size') and local_traj.size > 0:
-            x = local_traj[:, 0]
-            y = local_traj[:, 1]
-            
-            # 绘制轨迹
+        if local_traj is not None and len(local_traj) > 0:
+            local_traj = np.array(local_traj)
+            x, y = local_traj[:, 0], local_traj[:, 1]
             ax2.plot(x, y, 'b-', linewidth=2, label='Local trajectory')
             ax2.plot(x[0], y[0], 'go', markersize=8, label='Start')
             ax2.plot(x[-1], y[-1], 'mo', markersize=8, label='End')
-            
-            # 绘制机器人位置（局部坐标系原点）
             ax2.plot(0, 0, 'ro', markersize=10, label='Robot')
-            
-            # 绘制机器人朝向箭头
-            robot_direction_x = 0.3 * np.cos(0)  # 机器人朝向角为0（局部坐标系）
-            robot_direction_y = 0.3 * np.sin(0)
-            ax2.arrow(0, 0, robot_direction_x, robot_direction_y, 
-                    head_width=0.05, head_length=0.05, fc='red', ec='red', linewidth=2)
-            
+            ax2.arrow(0, 0, 0.3*np.cos(np.pi/2), 0.3*np.sin(np.pi/2),head_width=0.05, head_length=0.05, fc='red', ec='red', linewidth=2)
+            ax2.text(-0.9, 0.9,
+                     f"Linear: {self.linear_x:.2f} m/s\nAngular: {self.w_angular:.2f} rad/s",
+                     fontsize=12, color='orange', bbox=dict(facecolor='black', alpha=0.5))
             ax2.set_xlim(-1.0, 1.0)
             ax2.set_ylim(-1.0, 1.0)
             ax2.set_title("Local Trajectory with Orientation")
@@ -392,16 +492,13 @@ class DexPlanner:
         else:
             ax2.text(0.5, 0.5, "No trajectory data", ha='center', va='center')
             ax2.set_title("Local Trajectory with Orientation")
-        
-        # 添加时间戳
+
         fig.suptitle(f"Time: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}", y=0.02)
-        
         plt.tight_layout()
-        
-        # 保存图像
-        save_path = os.path.join("sample", f"traj_vis_{int(timestamp*1000)}.png")
+        save_path = os.path.join("result", f"traj_vis_{int(timestamp*1000)}.png")
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close(fig)
+        rospy.loginfo(f"[Visualize] Saved trajectory visualization to {save_path}")
 
     def run(self):
         """主控制循环"""
@@ -415,6 +512,7 @@ class DexPlanner:
                 target = self.current_target
                 # rospy.loginfo(f"target:{target}")
                 # self.visualize_data(target, self.obs)
+        
             self.goto_pose(target)
             
             rate.sleep()
