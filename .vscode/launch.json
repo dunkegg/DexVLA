@@ -170,7 +170,7 @@
         "name": "eval",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/eval_follow_whabitat.py",
+        "program": "${workspaceFolder}/eval_follow_remote.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
