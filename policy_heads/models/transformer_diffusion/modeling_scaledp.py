@@ -261,6 +261,7 @@ class ScaleDP(PreTrainedModel):
         self.num_inference_timesteps = config.num_inference_timesteps
         # self.proj_to_action = nn.Identity()
         self.prediction_type = 'sample'
+        # self.prediction_type = 'epsilon'
         self.noise_scheduler = DDIMScheduler(
             num_train_timesteps=config.num_train_timesteps, # 100
             beta_schedule='squaredcos_cap_v2',

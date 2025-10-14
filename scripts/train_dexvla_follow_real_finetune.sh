@@ -6,10 +6,12 @@ ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
 DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
 MNOP=OUTPUT/single_follow_normal/checkpoint-20000 # official qwen2_vl weights
-
+MNOP=/mnt/pfs/3zpd5q/code/eval/DexVLA/OUTPUT/qwen2_new_follow_sample/checkpoint-20000
 TASKNAME=real_finetue
 
-OUTPUT=OUTPUT/qwen2_follow_real
+OUTPUT=OUTPUT/qwen2_follow_real_finetune_on_sample_mirror
+mkdir -p $OUTPUT
+
 deepspeed --master_port 29604 --include=localhost:0,1 ./train_vla.py \
   --use_reasoning False \
   --lora_enable False \
