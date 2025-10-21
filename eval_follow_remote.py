@@ -22,7 +22,7 @@ import struct
 import numpy as np
 from io import BytesIO
 from PIL import Image
-
+import time
 # 参数
 HOST = '0.0.0.0'  # 监听所有 IP
 PORT = 8888       # 你自定义的端口
@@ -42,10 +42,21 @@ def handle_client(conn, addr, robot):
     try:
         while True:
             # --- 1. 接收图片数量 ---
+            start_time = time.time()
+
             raw_num_images = recv_all(conn, 4)
             num_images = struct.unpack('!I', raw_num_images)[0]
+            
+            end_time = time.time()
+            if num_images == 0:
+                conn.sendall(struct.pack('!I', 0))
+                # print(f"[Server] Time to WAIT: {end_time - start_time:.2f} seconds")
+                continue
+            # num_images=1
             print(f"[Server] Expecting {num_images} images")
+            print(f"[Server] Time to receive image count: {end_time - start_time:.2f} seconds")
 
+            start_time = time.time()
             images = []
             for _ in range(num_images):
                 raw_len = recv_all(conn, 4)
@@ -58,11 +69,14 @@ def handle_client(conn, addr, robot):
                 images.append(img)
 
             print(f"[Server] Received {len(images)} images")
-
+            end_time = time.time()
+            print(f"[Server] Time to receive images: {end_time - start_time:.2f} seconds")
             # 模型推理
+            start_time = time.time()
             robot.set_obs(images, 0, True)
             actions = robot.eval_bc_raw()
-
+            end_time = time.time()
+            print(f"[Server] Inference time: {end_time - start_time:.2f} seconds")
             # 序列化返回
             result = actions
             array_bytes = result.tobytes()
@@ -70,12 +84,16 @@ def handle_client(conn, addr, robot):
             shape = result.shape
             dtype_str = str(result.dtype)
 
-            conn.sendall(struct.pack('!II', shape[0], shape[1]))
-            conn.sendall(struct.pack('!I', len(dtype_str)))
-            conn.sendall(dtype_str.encode())
-            conn.sendall(struct.pack('!I', array_len))
+            start_time = time.time()
+            # conn.sendall(struct.pack('!II', shape[0], shape[1]))
+            # conn.sendall(struct.pack('!I', len(dtype_str)))
+            # conn.sendall(dtype_str.encode())
+            # conn.sendall(struct.pack('!I', array_len))
+            # # print(array_len)
             conn.sendall(array_bytes)
-
+            end_time = time.time()
+            print(f"[Server] Connection handled in {end_time - start_time:.2f} seconds")
+            
             print("[Server] Sent array response, waiting for next...")
 
     except (ConnectionError, OSError) as e:
@@ -91,9 +109,16 @@ def start_server(robot):
         s.listen(1)
         print(f"[Server] Listening on {HOST}:{PORT}")
 
+        
         while True:
+
             conn, addr = s.accept()
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            print("[Server] Connected")
+            # handshake = recv_all(conn, 1)
+            # print("[Server] Handshake received")
             handle_client(conn, addr, robot)
+
             # 一旦 client 断开，这里会自动返回，重新等待下一次连接
 
 
@@ -124,7 +149,8 @@ if __name__ == '__main__':
     # fake env for debug
     policy = qwen2_vla_policy(policy_config)
     agilex_bot = RawRobotEnv(policy_config, policy,plot_dir=img_output_dir)
-    agilex_bot.reset(10, None)
+    inference_frames = 8
+    agilex_bot.reset(inference_frames, None)
     start_server(agilex_bot)
     ######################################
     time_step = 0

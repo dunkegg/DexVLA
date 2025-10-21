@@ -182,6 +182,7 @@ class RawRobotEnv():
         return self.history_obs
 
     def set_obs(self,images,time,save=False):
+        self.cur_images = images
         self.history_obs = []
         for i, image in enumerate(images):
         # 如果是 numpy 数组，先转为 PIL.Image
@@ -295,10 +296,16 @@ class RawRobotEnv():
                 all_actions = all_actions.squeeze(0)  #
                 all_actions = all_actions.to(dtype=torch.float32).cpu().numpy()
                 all_actions = np.array([self.post_process(raw_action) for raw_action in all_actions])
-                all_actions = all_actions - all_actions[0]
+                # all_actions = all_actions - all_actions[0]
+
+                raw_all_actions, all_actions = self.post_process_action(all_actions)
                 # actions,raw_lang = self.get_info()
                 # plot_actions(i,all_actions[0], actions, raw_lang, self.post_process, frames)
             self.local_actions = all_actions
+            start_time = time.time()
+            self.visualize_trajectory(self.cur_images[-1],raw_all_actions, all_actions)
+            end_time = time.time()
+            print(f"[Server] Time to plot and save image: {end_time - start_time:.2f} seconds")
             ####################################################################################################################################
             # clear previous actions
             while len(self.action_queue) > 0:
@@ -310,7 +317,7 @@ class RawRobotEnv():
             return  local_actions
             ####################################################################################
 
-    def visualize_trajectory(self, cv_image, all_actions):
+    def visualize_trajectory(self, cv_image, raw_actions, all_actions):
             if cv_image is None or all_actions is None:
                 return
             # now = time.time()
@@ -322,6 +329,7 @@ class RawRobotEnv():
             img = cv_image.copy()
             h, w, _ = img.shape
             center_x, center_y = w // 2, h - 1
+            cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)
             scale = 50.0
             for i in range(len(all_actions) - 1):
                 x1, y1 = all_actions[i, :2]
@@ -329,7 +337,213 @@ class RawRobotEnv():
                 p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
                 p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
                 cv2.line(img, p1, p2, (0, 255, 0), 2)
-            cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)
-            text = f"Linear: {self.linear_x:.2f} m/s | Angular: {self.w_angular:.2f} rad/s"
-            cv2.rectangle(img, (10, 10), (450, 50), (0, 0, 0), -1)
-            cv2.putText(img, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            
+
+            for i in range(len(raw_actions) - 1):
+                x1, y1 = raw_actions[i, :2]
+                x2, y2 = raw_actions[i + 1, :2]
+                p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
+                p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
+                cv2.line(img, p1, p2, (255, 0, 0), 1)
+
+
+            # text = f"Linear: {self.linear_x:.2f} m/s | Angular: {self.w_angular:.2f} rad/s"
+            # cv2.rectangle(img, (10, 10), (450, 50), (0, 0, 0), -1)
+            # cv2.putText(img, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            # === 保存结果 ===
+            out_dir = os.path.join("test_real")
+            os.makedirs(out_dir, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+            save_path = os.path.join(out_dir, f"trajectory_{timestamp}.png")
+            cv2.imwrite(save_path, img)
+            print(f"✅ Trajectory visualization saved to: {save_path}")
+    def smooth_yaw(self, actions, window_size=3):
+        if len(actions) < window_size:
+            return actions
+        
+        yaw_actions = []
+        for action in actions:
+            yaw_actions.append((action[:2], action[2]))
+        
+        smoothed_actions = []
+        for i in range(len(yaw_actions)):
+            start = max(0, i - window_size // 2)
+            end = min(len(yaw_actions), i + window_size // 2 + 1)
+            window = yaw_actions[start:end]
+
+            avg_pos = sum([a[0] for a in window]) / len(window)
+            avg_yaw = sum([a[1] for a in window]) / len(window)
+            smoothed_actions.append((avg_pos, avg_yaw))
+        
+        final = np.array([np.array([pos[0], pos[1], yaw]) for pos, yaw in smoothed_actions])
+        return final
+
+    def post_process_action(self, action):
+
+        action = action - action[0]
+
+        action = self.smooth_yaw(action, window_size=5)
+        raw_action = action.copy()
+        traj_length = 0
+        for i in range(len(action) - 1):
+            dx = action[i + 1][0] - action[i][0]
+            dy = action[i + 1][1] - action[i][1]
+            traj_length += np.sqrt(dx * dx + dy * dy)
+        if traj_length < 0.1:
+            action = np.zeros_like(action)
+            return raw_action, action
+        
+        last_x, last_y, last_yaw = action[-1][0], action[-1][1], action[-1][2]
+        if last_y < 0:
+            action = np.zeros_like(action)
+            return raw_action, action
+        
+
+        # action = np.zeros_like(action)
+        # return action
+
+        # Rule possible trajectories
+        node_length = 0.3
+        start_node = (0, 0, 0)  # x, y,
+        if last_x>0:
+            if traj_length > 0.4:
+                node_length = 0.6
+            else:
+                node_length = 0.3
+        else:
+            if traj_length > 0.1:
+                node_length = 0.6
+            else:
+                node_length = 0.3
+        next_nodes = self.generate_next_traj_nodes(start_node, step_length=node_length, max_steer_deg=45.0, num_branches=7)
+        next_node = None
+
+        node_idx = 0
+        if last_x>0:
+            if abs(last_x)<0.03:
+                node_idx = 3
+            elif last_x<0.2:
+                node_idx = 4
+            elif last_x < 0.25:
+                node_idx = 5
+            else:
+                node_idx = 6
+        else:
+            angle_rad = math.atan2(-last_x,last_y)        # 弧度制
+            angle_deg = math.degrees(angle_rad)
+            if abs(angle_deg)<10:
+                node_idx = 3
+            elif angle_deg<=20:
+                node_idx =2
+            elif angle_deg<=30:
+                node_idx =1
+            else:
+                node_idx =0
+            # elif angle_deg>=20:
+            #     node_idx =2
+            # elif angle_deg>=30:
+            #     node_idx =1
+            # elif angle_deg>=40:
+            #     node_idx =0
+        next_node = next_nodes[node_idx]  # 直行
+
+        action[:, 0] = next_node[:, 0]  # y
+        action[:, 1] = next_node[:, 1]  # x
+        action[:, 2] = next_node[:, 2]  
+
+        # x,y,yaw = next_node
+        # action[:,0] = x
+        # action[:,1] = y
+        # action[:,2] = yaw
+        return raw_action, action
+
+
+
+    
+
+    def generate_next_nodes(self, current_node, step_length=0.3, max_steer_deg=45.0, num_branches=9):
+        """
+        生成Hybrid A*中的下一个节点集
+
+        Args:
+            current_node (tuple): (x, y, yaw) 当前节点
+            step_length (float): 单步长度（米）
+            max_steer_deg (float): 最大转向角度（度）
+            num_branches (int): 要生成的分支数（奇数，如9）
+
+        Returns:
+            list[tuple]: 每个子节点的 (x, y, yaw)
+        """
+        x, y, yaw = current_node
+
+        # 均匀划分转向角（不含后退）
+        steer_angles = np.linspace(-max_steer_deg, max_steer_deg, num_branches)
+        steer_rads = np.deg2rad(steer_angles)
+
+        next_nodes = []
+        for delta in steer_rads:
+            new_yaw = yaw + delta
+            new_x = x + step_length * np.cos(new_yaw)
+            new_y = y + step_length * np.sin(new_yaw)
+            # next_nodes.append((new_x, new_y, new_yaw))
+            next_nodes.append((new_y, new_x, new_yaw))
+
+        return next_nodes
+
+    def generate_next_traj_nodes(self, current_node, step_length=0.3, max_steer_deg=45.0, num_branches=9, num_points=30, wheelbase=0.5):
+        """
+        生成 Hybrid A* 的下一个节点分支（每个分支包含一条平滑轨迹）
+
+        Args:
+            current_node (tuple): (x, y, yaw)
+            step_length (float): 每条轨迹的总长度
+            max_steer_deg (float): 最大转向角（度）
+            num_branches (int): 分支数（奇数）
+            num_points (int): 每条轨迹离散点数
+            wheelbase (float): 车辆轴距（用于计算转弯半径）
+
+        Returns:
+            list[np.ndarray]: 每条轨迹为 shape=(num_points, 3) 的数组 (x, y, yaw)
+        """
+        x, y, yaw = current_node
+
+        steer_angles = np.linspace(-max_steer_deg, max_steer_deg, num_branches)
+        steer_rads = np.deg2rad(steer_angles)
+
+        next_trajectories = []
+
+        for delta in steer_rads:
+            # === 使用单轮模型运动学更新 ===
+            # 如果转向角不为0，使用圆弧模型；否则为直线
+            if abs(delta) > 1e-3:
+                turning_radius = wheelbase / np.tan(delta)
+                dtheta = step_length / turning_radius
+            else:
+                turning_radius = np.inf
+                dtheta = 0.0
+
+            # 在轨迹上均匀采样 num_points
+            traj = []
+            for i in range(num_points):
+                ratio = (i + 1) / num_points
+                s = step_length * ratio
+
+                if abs(delta) > 1e-3:
+                    # 圆弧运动模型
+                    theta = yaw + s / turning_radius
+                    cx = x - turning_radius * np.sin(yaw)
+                    cy = y + turning_radius * np.cos(yaw)
+                    new_x = cx + turning_radius * np.sin(theta)
+                    new_y = cy - turning_radius * np.cos(theta)
+                    new_yaw = theta
+                else:
+                    # 直线前进
+                    new_x = x + s * np.cos(yaw)
+                    new_y = y + s * np.sin(yaw)
+                    new_yaw = yaw
+
+                traj.append((new_y, new_x, new_yaw))  # 注意顺序(y,x,yaw)
+
+            next_trajectories.append(np.array(traj))
+
+        return next_trajectories
