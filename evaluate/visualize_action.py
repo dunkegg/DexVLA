@@ -151,7 +151,7 @@ def plot_obs(time,predicted_actions ,raw_lang, obs,human_position, target_action
 
     ax_xy.plot(pred[:, 0], pred[:, 1], color=pred_color, label='Predicted XY')
     ax_xy.plot(pred[:16, 0], pred[:16, 1], color='purple', label='Early Steps (0~15)', linewidth=2)
-    ax_xy.plot(pred[:12, 0], pred[:12, 1], color='yellow', label='Early Steps (0~11)', linewidth=2)
+    # ax_xy.plot(pred[:12, 0], pred[:12, 1], color='yellow', label='Early Steps (0~11)', linewidth=2)
     if target_actions is not None:
         ax_xy.plot(target_actions[:, 0], target_actions[:, 1], color=target_color, label='Target XY')
     if smooth_actions is not None:

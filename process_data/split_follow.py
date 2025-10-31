@@ -45,79 +45,7 @@ def process_file(s, new_h5_path, cam_name, n_frames=10):
             os.remove(new_h5_path)
         print(f"File {new_h5_path} has been removed due to the error.")
         return False  # 返回 False 表示文件处理失败
-    return True  # 返回 True 表示文件处理成功
-import numcodecs
-
-def process_file_zarr(s, new_zarr_path, cam_name, n_frames=10):
-    try:
-        # 如果已经存在旧的 zarr 文件，先清除（确保干净）
-        if os.path.exists(new_zarr_path):
-            shutil.rmtree(new_zarr_path)
-
-        root = zarr.open(new_zarr_path, mode='w')
-
-        # 写入 action
-        action = s["action"]
-        root.create_dataset("/action", data=action, compressor=zarr.Blosc(cname='zstd', clevel=3))
-
-        # 写入 qpos
-        qpos = s["qpos"]
-        root.create_dataset("/observations/qpos", data=qpos, compressor=zarr.Blosc(cname='zstd', clevel=3))
-
-        # 写入 language_raw
-        # language_raw = s["language_raw"]
-        # root.create_dataset("language_raw", data=language_raw)
-        language_raw = s["language_raw"][()].decode("utf-8")
-
-        # language_raw = np.array(language_raw, dtype=object)
-        root.create_dataset(
-            "language_raw",
-            data=language_raw,
-            compressor=zarr.Blosc(cname='zstd', clevel=3),
-            object_codec=numcodecs.VLenUTF8()
-        )
-        # 处理 history_paths
-        history_paths = s["observations/history_images"][()]
-        history_paths = [path.decode("utf-8") for path in history_paths]
-        if int(s["obs_idx"][()]) <= n_frames:
-            if len(history_paths) > 1:
-                history_paths[0] = history_paths[1]
-            else:
-                history_paths[0] = s["observations/images"][()]
-
-            if n_frames > len(history_paths):
-                history_paths = [history_paths[0]] * (n_frames - len(history_paths)) + history_paths
-
-        # root.create_dataset("/observations/history_images", data=np.array(history_paths), compressor=zarr.Blosc(cname='zstd', clevel=3))
-
-
-        root.create_dataset(
-            "/observations/history_images",
-            data=np.array(history_paths, dtype=object),
-            compressor=zarr.Blosc(cname='zstd', clevel=3),
-            object_codec=numcodecs.VLenUTF8()  # 可变长度 UTF8 字符串
-            )
-
-
-
-        # 写入当前观测图像
-        obs = s["observations/images"][()].decode("utf-8")
-        # root.create_dataset(f"/observations/images/{cam_name}", data=obs, compressor=zarr.Blosc(cname='zstd', clevel=3))
-        root.create_dataset(
-            f"/observations/images/{cam_name}",
-            data=obs,
-            compressor=zarr.Blosc(cname='zstd', clevel=3),
-            object_codec=numcodecs.VLenUTF8()
-        )
-        a = 1
-
-    except Exception as e:
-        print(f"Error while processing {new_zarr_path}: {e}")
-        if os.path.exists(new_zarr_path):
-            shutil.rmtree(new_zarr_path)
-            print(f"Directory {new_zarr_path} has been removed due to the error.")
-        return False
-    return True
+    return True  # 返回 True 表示文件处理成功W
 
 # def save_selected_keys_as_individual_h5(src_h5_path, dst_dir):
 #     """
@@ -207,7 +135,7 @@ def save_selected_keys_as_individual_h5(src_h5_path, dst_dir):
                 try:
                     success = process_file(s, new_h5_path, cam_name, n_frames=10)
                     if success:
-                        print(f"[OK] {new_h5_path}")
+                        # print(f"[OK] {new_h5_path}")
                         count += 1
                     else:
                         print(f"[FAIL] Process error in {new_h5_path}, skipping.")
@@ -246,8 +174,8 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
 
 if __name__ == "__main__":
     # 设置源目录和目标目录
-    src_dir = "./data/proc_data/single_follow"  # 当前目录
-    dst_dir = "./data/split_data/single_follow"  # 输出目录
+    src_dir = "./data/proc_data/multi_follow_mix"  # 当前目录
+    dst_dir = "./data/split_data/multi_follow_mix"  # 输出目录
     # 设置要保存的key
 
     process_all_hdf5_in_directory(src_dir, dst_dir)

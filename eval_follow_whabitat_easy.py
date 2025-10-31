@@ -21,7 +21,7 @@ from habitat_for_sim.utils.load_scene import load_simulator, generate_path_from_
 
 from human_follower.walk_behavior import walk_along_path_multi, generate_interfere_path_from_target_path, get_path_with_time,generate_interfer_path, generate_interfere_sample_from_target_path
 from human_follower.human_agent import AgentHumanoid, get_humanoid_id
-from human_follower.save_data import save_output_to_h5, to_quat
+
 from habitat_for_sim.utils.explore.explore_habitat import (
     make_simple_cfg,
     pos_normal_to_habitat,
@@ -107,8 +107,22 @@ if __name__ == '__main__':
     img_output_dir = cfg.img_output_dir
     video_output_dir = cfg.video_output_dir
     log_path = create_log_json() if cfg.log_path is None else cfg.log_path 
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>hyper parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    action_head = 'scale_dp_policy'  # or 'unet_diffusion_policy'
+    query_frequency = 16
+    policy_config = {
+        #### 1. Specify path to trained DexVLA(Required)#############################
+        "model_path": cfg.model_path,
+        #############################################################################
+        "model_base": None, # only use for lora finetune
+        "enable_lora": False, # only use for lora finetune
+        "action_head": action_head,
+        "tinyvla": False,
+    }
 
-    agilex_bot = None
+    # fake env for debug
+    policy = qwen2_vla_policy(policy_config)
+    agilex_bot = FakeRobotEnv(policy_config, policy,plot_dir=img_output_dir)
     ######################################
     
 
@@ -134,12 +148,9 @@ if __name__ == '__main__':
     success_count = 0
     episodes_count = 0
     jump_idx = get_max_episode_number(img_output_dir)+1
-    jump_idx = 0
-    with open("character_descriptions.json", "r") as f:
-        id_dict = json.load(f)
     for file_name, content in sorted(data.items()):
-        # if episodes_count > max_episodes:
-        #     break
+        if episodes_count > max_episodes:
+            break
 
         structured_data,  filtered_episodes = process_episodes_and_goals(content)
         
@@ -161,38 +172,34 @@ if __name__ == '__main__':
             print("Failed to load or generate navmesh.")
             continue
             raise RuntimeError("Failed to load or generate navmesh.")   
-        episodes = convert_to_scene_objects(structured_data, filtered_episodes, pathfinder, min_distance=10, sample_all=True)
+        episodes = convert_to_scene_objects(structured_data, filtered_episodes, pathfinder, min_distance=10, sample_all=False)
 
-
+        with open("character_descriptions.json", "r") as f:
+            id_dict = json.load(f)
 
         # ###label
-        folders = [f"female_{i}" for i in range(35)] + [f"male_{i}" for i in range(65)]
-        humanoid_name = folders[all_index]
+        # folders = [f"female_{i}" for i in range(35)] + [f"male_{i}" for i in range(65)]
+        # humanoid_name = folders[all_index]
 
-
-        # humanoid_name =random.choice(["female_6", "male_5"])
-        print(f"Selected humanoid: {humanoid_name}")
+        
+        humanoid_name = get_humanoid_id(id_dict, name_exception=None)
+        humanoid_name = "female_6" 
         follow_description = id_dict[humanoid_name]["description"]
+        # if not cfg.multi_humanoids:
+        #     humanoid_name = "female_0"
+        #     follow_description = None
         # 原主目标人
         
         target_humanoid = AgentHumanoid(simulator,base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data ,name = humanoid_name,description = follow_description, is_target=True)
         
-        interferer_num = random.randint(0,3)
         all_interfering_humanoids = []
         if cfg.multi_humanoids:
-            interferer_list = []
-            for idx in range(interferer_num):
-                # break
-                # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
-                interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
-                interferer_list.append(interferer_name)
+            # for idx in range(3):
+            #     # break
+            #     # max_humanoids[idx].reset(name = get_humanoid_id(humanoid_name))
+            #     interferer_name = get_humanoid_id(id_dict, name_exception = humanoid_name)
             # for interferer_name in ["female_2", "female_3"]:
-            # if humanoid_name == "female_6":
-            #     interferer_list =  ["male_5"]
-            # else:
-            #     interferer_list = ["female_6"]
-
-            for interferer_name in interferer_list:
+            for interferer_name in ["male_5"]:
                 interferer_description = id_dict[interferer_name]["description"]
                 interferer = AgentHumanoid(simulator, base_pos=mn.Vector3(-5, 0.083, -5), base_yaw = 0, human_data_root = cfg.human_data, name = interferer_name, description = interferer_description, is_target=False)
                 all_interfering_humanoids.append(interferer)
@@ -203,8 +210,8 @@ if __name__ == '__main__':
         print("begin")
         for episode_idx, episode_data in enumerate(tqdm(episodes)):
             episode_id = episode_data["episode_id"]
-            # if episodes_count > max_episodes:
-            #     break
+            if episodes_count > max_episodes:
+                break
 
             if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl"):
                 print(f"{current_scene} :  {episode_id} in blacklist")
@@ -225,13 +232,8 @@ if __name__ == '__main__':
                 imageio.imwrite(f'black_obs/{episode_id}.png', obs)
                 add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
                 continue
-            # reset humanoid
-
-
-
-
-
             #
+
             human_fps = 10
             human_speed = 0.7
             followed_path = generate_path_from_scene(episode_data, pathfinder, 10, human_fps, human_speed)
@@ -246,45 +248,44 @@ if __name__ == '__main__':
                 # interfering_humanoids = random.sample(all_interfering_humanoids, k)
                 interfering_humanoids = all_interfering_humanoids
                 for interfering_humanoid in interfering_humanoids:
-                    radius = random.uniform(1, 5)
-                    sample_path = generate_interfere_sample_from_target_path(followed_path,pathfinder, radius=radius)
+                    sample_path = generate_interfere_sample_from_target_path(followed_path,pathfinder, 1)
                     list_pos = [[point.x,point.y,point.z] for point in sample_path]
                     interfering_path = generate_path(list_pos, pathfinder, visualize=False)
                     interfering_path = get_path_with_time(interfering_path, time_step=1/human_fps, speed=0.9)
                     interfering_humanoid.reset_path(interfering_path)
                 
 
-            try:
-                output_data = walk_along_path_multi(
-                    all_index=all_index,
-                    sim=simulator,
-                    humanoid_agent=target_humanoid,
-                    human_path=followed_path,
-                    fps=10,
-                    forward_speed=human_speed,
-                    timestep_gap = 1/human_fps, 
-                    interfering_humanoids=interfering_humanoids,
-                    robot = agilex_bot
-                )
-
-            except Exception as e:
-                print(e)
-                continue
+            agilex_bot.reset(simulator.agents[0],n_frames=10, human_description=follow_description)
+            # try:
+            output_data = walk_along_path_multi(
+                all_index=all_index,
+                sim=simulator,
+                humanoid_agent=target_humanoid,
+                human_path=followed_path,
+                fps=10,
+                forward_speed=human_speed,
+                timestep_gap = 1/human_fps, 
+                interfering_humanoids=interfering_humanoids,
+                robot = agilex_bot
+            )
+            append_log(log_path, index=all_index, success=output_data["follow_result"], sample_fps=output_data["sample_fps"], plan_fps=output_data["plan_fps"], follow_size=output_data["follow_size"])
+            if output_data["follow_result"]:
+                success_count+=1
+            # except Exception as e:
+            #     print(e)
+            #     continue
 
             
-            save_output_to_h5(output_data, f"data/raw_data/multi_follow_combine/episode_{all_index}.hdf5")
-            if all_index < 50:
-                video_output = video_output_dir
-                os.makedirs(video_output, exist_ok=True)
-                vut.make_video(
-                    output_data["obs"],
-                    "color_0_0",
-                    "color",
-                    f"{video_output}/humanoid_wrapper_{all_index}",
-                    open_vid=False,
-                )
+            video_output = video_output_dir
+            os.makedirs(video_output, exist_ok=True)
+            vut.make_video(
+                output_data["obs"],
+                "color_0_0",
+                "color",
+                f"{video_output}/humanoid_wrapper_{all_index}",
+                open_vid=False,
+            )
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
-            episodes_count+=len(output_data["follow_paths"])
             all_index+=1
 
             print(f"Success Rate: {success_count/all_index}")

@@ -2,7 +2,7 @@ import subprocess
 import time
 
 cmd = "./scripts/train_dexvla_stage2_follow.sh"
-cmd = "python eval_follow_whabitat.py --yaml_file_path habitat_for_sim/cfg/exp_eval_single.yaml"
+cmd = "python eval_follow_whabitat_easy.py --yaml_file_path habitat_for_sim/cfg/exp_eval_multi.yaml"
 
 while True:
     print(f"\n🚀 启动脚本：{cmd}")

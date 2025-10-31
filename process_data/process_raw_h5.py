@@ -363,11 +363,12 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
     # if dst_h5.exists():
     #     print(f"⚠️  Skip {ep_name} — already exists: {dst_h5}")
     #     return
+    count = 0
     with h5py.File(src_file,"r") as fin:
         obs_ds,_ = locate_obs_dataset(fin)
         if not check_episode_validity(obs_ds):
             print(f"❌ {src_file} 前几帧无效图像，跳过")
-            return              # 跳过该 episode
+            return 0         # 跳过该 episode
         frame_paths=[]
         for i in range(len(obs_ds)):
             png = frames_dir / f"frame_{i:06d}.png"
@@ -386,6 +387,16 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 if obs_idx == 0:
                     continue
                 type = int(s["type"][()])
+                type = 0
+                # if type == 1:
+                #     type = 0
+                # else:
+                #     print(f"type: {type}")
+                human_description = s.get("desc", None)
+                if human_description:
+                    instruction = "Follow  " + human_description[()].decode("utf-8")
+                else:
+                    instruction = "Follow the human."
                 d.create_dataset("obs_idx",data=obs_idx)
                 d.create_dataset(f"observations/images",data=frame_paths[obs_idx],dtype=h5py.string_dtype())
                 start=max(0,obs_idx-hist);hist_paths=frame_paths[start:obs_idx]
@@ -405,13 +416,15 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 # reletive_path, huamn_local  = world2local_yawXZ(raw_path,human_pos, follow_yaw)
                 d.create_dataset("rel_path",data=reletive_path)
                 actions = interpolate_rel_path(reletive_path, 30, 3.0)
-                d.create_dataset('language_raw', data="follow the human")
+                d.create_dataset('language_raw', data=instruction)
                 d.create_dataset('action', data=actions, compression='gzip')
                 qposes = np.zeros_like(actions)
                 d.create_dataset('qpos', data=qposes, compression='gzip')
-                if viz_root and True:
+                count += 1
+                if viz_root and False:
                     visualize_follow_path(d, actions,huamn_local, viz_root/ep_name/f"action_{obs_idx}_{type}.png")
     print(f"✓ {ep_name} -> {dst_h5}")
+    return count
 
 def main(src_dir: Path, frames_dir: Path, dst_dir: Path, viz_dir: Path|None, history:int):
     src_dir, frames_dir, dst_dir = map(Path,(src_dir,frames_dir,dst_dir))
@@ -422,8 +435,10 @@ def main(src_dir: Path, frames_dir: Path, dst_dir: Path, viz_dir: Path|None, his
     if not h5_files:
         print("‼ 未找到 *.hdf5 文件于",src_dir); return
 
+    count = 0
     for f in h5_files:
-        process_one(f, frames_dir, dst_dir, viz_dir, history)
+        count += process_one(f, frames_dir, dst_dir, viz_dir, history)
+        print(f"Processed {count} cases in total.")
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser(description="batch convert episodes")
@@ -433,9 +448,9 @@ if __name__=="__main__":
     args.frames_dir ="data/frames/single_follow"
     args.dst_dir = "data/proc_data/single_follow"
 
-    args.src_dir = "data/raw_data/multi_follow_hdf5"
-    args.frames_dir ="data/frames/multi_follow"
-    args.dst_dir = "data/proc_data/multi_follow"
+    args.src_dir = "data/raw_data/multi_follow_mix"
+    args.frames_dir ="data/frames/multi_follow_mix"
+    args.dst_dir = "data/proc_data/multi_follow_mix"
 
     args.viz = "results/multi_follow"
     args.history = 10
