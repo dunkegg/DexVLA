@@ -5,7 +5,9 @@ exp_name: view_sample
 scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
 json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 human_data: human_follower/humanoid_data
-model_path: /mnt/pfs/3zpd5q/code/train/DexVLA/OUTPUT/multi_follow_mix/checkpoint-20000
+model_path: /mnt/pfs/3zpd5q/code/train/DexVLA/OUTPUT/multi_follow_clear/checkpoint-20000
+proc_data_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/data/proc_data/multi_follow_clear
+human_description: "character_descriptions_new.json"
 image_lens: 10
 
 max_episodes: 50000
@@ -39,6 +41,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot_multi_combine
-video_output_dir: results_eval_multi_combine
-log_path: logs/log_multi_easy.json
+img_output_dir: eval_plot_multi_clear_data
+video_output_dir: results_eval_multi_clear_data
+log_path: logs/log_multi_clear.json

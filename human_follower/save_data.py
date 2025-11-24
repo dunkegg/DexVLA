@@ -103,3 +103,46 @@ def save_output_to_h5(output: dict, h5_path="output.h5"):
 
             g.create_dataset("shortest_path", data=path_np, compression="gzip")
     print(f"✅  HDF5 saved to: {h5_path}")
+
+
+def save_walk_data_to_h5(observations, walk_path, h5_path="output.h5"):
+    """
+    保存数据为：
+        /observations/color_0_0   : 图片序列
+        /walk_paths/rel_path      : Nx8 路径矩阵
+        /walk_paths/instructions  : JSON 字符串（每段带全局 index）
+    """
+
+    with h5py.File(h5_path, "w") as f:
+
+        # -------------------------------------------------------
+        # ① 保存图像
+        # -------------------------------------------------------
+        # obs_group = f.create_group("observations")
+        dt = h5py.string_dtype(encoding="utf-8")
+
+        save_obs_list(observations, f, sensor_key="color_0_0")
+
+        # -------------------------------------------------------
+        # ② 保存路径数据
+        # -------------------------------------------------------
+        # grp = f.create_group("walk_paths")
+
+        # 转成 Nx8 数组
+        path_np = np.empty((len(walk_path), 8), np.float32)
+
+        for i, (pos, quat, yaw) in enumerate(walk_path):
+            path_np[i, :3] = to_vec3(pos)        # 位置
+            path_np[i, 3:7] = to_quat(quat)   # 四元数
+            path_np[i, 7] = yaw
+
+        f.create_dataset("rel_path", data=path_np, compression="gzip")
+
+        # -------------------------------------------------------
+        # ③ 保存指令数据（作为 JSON 字符串）
+        # -------------------------------------------------------
+        # import json
+        # instr_json = json.dumps(instruction_map, ensure_ascii=False)
+        # grp.create_dataset("instructions", data=instr_json, dtype=dt)
+
+    print(f"✅  HDF5 saved to: {h5_path}")

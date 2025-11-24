@@ -170,15 +170,15 @@
         "name": "eval",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/eval_follow_whabitat.py",
+        "program": "${workspaceFolder}/eval_follow_with_data.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
-          "CUDA_VISIBLE_DEVICES": "2",       
+          "CUDA_VISIBLE_DEVICES": "3",       
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi_combine.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
@@ -230,14 +230,29 @@
         "name": "goat follow",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/goat_follow.py",
+        "program": "${workspaceFolder}/goat_follow_one.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_follow.yaml"
+        ],
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
+      },
+      {
+        "name": "sample rxr",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/sample_rxr_obj.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_rxr.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },

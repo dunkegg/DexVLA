@@ -23,19 +23,14 @@ import imageio
 import random
 from omegaconf import DictConfig
 
-def get_humanoid_id(id_dict, name_exception=None):
+def get_humanoid_id(name_list, name_exception=None):
     while True:
-        gender =  random.choice(['female','male'])
-        if gender == 'female':
-            num = random.randint(0, 34)
-        else:
-            num = random.randint(0, 64)
-        humanoid_name = gender+'_'+f'{num}'
+        humanoid_name =  random.choice(name_list)
 
         if name_exception is None:
             break
         else:
-            if humanoid_name != name_exception and id_dict[humanoid_name]["tag"] != id_dict[name_exception]["tag"]:
+            if humanoid_name != name_exception:
                 break
 
     return humanoid_name

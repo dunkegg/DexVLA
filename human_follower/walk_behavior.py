@@ -274,7 +274,7 @@ def generate_interfer_path(interfering_humanoids, human_path, time_step=1/10, sp
         )
         interferer.reset_path(path)
 
-def sample_data(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, observations, output, follow_timestep,follow_state):
+def sample_follow(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, observations, output, follow_timestep,follow_state):
 
     keep_distance = 0.7
     sample_list = [random.uniform(1, 1.5), random.uniform(1.5, 2),random.uniform(2, 2.5),random.uniform(2.5, 3.5), random.uniform(3, 3.5),random.uniform(3.5, 4)]
@@ -427,6 +427,7 @@ def walk_along_path_multi(
     last_plan_time = 0
     last_step_time = 0
     
+    
     for time_step in range(2, len(human_path)):
         goal_pos, goal_quat, goal_yaw = human_path[time_step]
 
@@ -444,7 +445,7 @@ def walk_along_path_multi(
         # 调用控制器移动一步
         humanoid_agent.step_with_controller(
             target_pos=goal_pos,
-            target_yaw=goal_yaw,
+            target_yaw=-goal_yaw,
             direction=direction,
         )
 
@@ -467,7 +468,7 @@ def walk_along_path_multi(
         # 更新物理引擎
         sim.step_physics(1.0 / fps)
         if robot is None:
-            output, observations, follow_timestep, follow_state, move_dis = sample_data(sim=sim, human_path = human_path,
+            output, observations, follow_timestep, follow_state, move_dis = sample_follow(sim=sim, human_path = human_path,
                                                                             goal_pos = goal_pos, time_step = time_step, move_dis = move_dis,humanoid_agent = humanoid_agent, 
                                                                             observations = observations, output = output, follow_timestep = follow_timestep,follow_state = follow_state)
         else:
@@ -498,6 +499,100 @@ def walk_along_path_multi(
                 # robot.compare_step(follow_size, max_move_dis)
 
             robot.ctrl_step(now, position)
+
+
+    # for time_step in range(len(human_path), len(human_path)+6):
+    #     now = timestep_gap * time_step
+    #     robot.ctrl_step(now, position)
+            
+            
+    if robot:
+        observations = [{"color_0_0": obs} for obs in robot.get_observations()]
+        output["follow_result"] = follow_success
+    output["obs"] = observations
+
+    print("walk done")
+    return output
+
+def walk_along_path(
+    all_index,
+    sim,
+    walk_path,
+    fps=10,
+    timestep_gap = 0.2,
+    forward_speed=0.7,
+    robot = None,
+):
+    if robot is not None:
+        robot.set_episode_id(all_index)
+    output = {"obs": [], "follow_paths": []}
+    
+    follow_success = False
+
+    keep_distance = 0.7
+
+
+    observations = []
+
+    sim.step_physics(1.0 / fps)
+
+    now = 0
+    if robot is not None:
+        robot.set_obs(obs['color_0_0'], now, save=True)
+        robot.set_world_pos(follow_state.position.x, follow_state.position.z, follow_yaw, follow_state.position.y)
+
+    follow_timestep = 0
+
+    move_dis = 0
+    last_dis = 0
+    last_plan_dis = 0
+
+    last_sample_time = 0
+    last_plan_time = 0
+    last_step_time = 0
+    
+    
+    for time_step in range(len(walk_path)):
+        follow_state = sim.agents[0].get_state()
+        follow_yaw = walk_path[time_step][2]
+        follow_state.position = walk_path[time_step][0]
+        follow_state.rotation = to_quat(walk_path[time_step][1])
+        
+        # 更新物理引擎
+        sim.step_physics(1.0 / fps)
+        if robot is None:
+            sim.agents[0].set_state(follow_state)
+            obs = sim.get_sensor_observations(0)
+            observations.append(obs)
+
+        # else:
+        #     now = timestep_gap * time_step
+
+                
+        #     sample_fps = 1.3
+        #     sample_fps = 3
+        #     plan_fps = 4
+        #     follow_size = 5
+        #     output["sample_fps"] = sample_fps
+        #     output["plan_fps"] = plan_fps
+        #     output["follow_size"] = follow_size
+        #     # step_fps = 0.4
+            
+        #     max_move_dis = 0.7
+        #     # max_move_dis = forward_speed/plan_fps
+        #     if now - last_sample_time >= 1/sample_fps:
+        #         last_sample_time = now
+        #         obs = sim.get_sensor_observations(0)
+        #         robot.set_obs(obs['color_0_0'], now, save=True)
+
+        #     position,yaw,quat = humanoid_agent.get_pose()
+        #     if now - last_plan_time >= 1/plan_fps and now > 3:
+        #         last_plan_time = now
+        #         robot.eval_bc(now, position)
+        #         robot.save_obs(now, position)
+        #         # robot.compare_step(follow_size, max_move_dis)
+
+        #     robot.ctrl_step(now, position)
 
 
     # for time_step in range(len(human_path), len(human_path)+6):

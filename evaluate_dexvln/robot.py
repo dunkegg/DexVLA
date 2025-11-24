@@ -291,6 +291,7 @@ class FakeRobotEnv():
         self.smooth_window_size = 6
 
         self.follower = None
+        self.type = 1
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
@@ -312,10 +313,10 @@ class FakeRobotEnv():
 
         # self.plot_dir = self.plot_dir + f"{n_frames}"
 
-        raw_lang ="follow the human"
+        self.raw_lang ="follow the human"
         if human_description:
-            raw_lang = "follow :" + human_description
-        self.instruction = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            self.raw_lang = "follow :" + human_description
+        self.instruction = f"Your task is: {self.raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
 
     def set_episode_id(self, episode_id):
         self.episode_id = episode_id
@@ -380,7 +381,7 @@ class FakeRobotEnv():
         cur_image = self.history_obs[-1]
 
         human_position = np.array([human_position.x,human_position.y,human_position.z])
-        local_human_position = world2local_target(human_position - self.agent.get_state().position, habitat_quat_to_magnum(self.agent.get_state().rotation), type=1)
+        local_human_position = world2local_target(human_position - self.agent.get_state().position, habitat_quat_to_magnum(self.agent.get_state().rotation), type=self.type)
         # human_position[0] = human_position[0]
         # human_position[2] = -human_position[2]
         plot_world = np.concatenate([self.world_actions[:, :1], self.world_actions[:, 2:]], axis=1)
@@ -392,7 +393,7 @@ class FakeRobotEnv():
         local_actions_smooth = smooth_yaw(self.local_actions, self.smooth_window_size)
 
         # world_img_np = plot_obs(time, plot_world, "follow the human", cur_image,human_position)
-        local_img_np = plot_obs(time, self.local_actions, "follow the human", cur_image,local_human_position, smooth_actions=local_actions_smooth)
+        local_img_np = plot_obs(time, self.local_actions, self.raw_lang, cur_image,local_human_position, smooth_actions=local_actions_smooth)
 
         plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}")
         os.makedirs(plot_dir, exist_ok=True)
@@ -630,7 +631,7 @@ class FakeRobotEnv():
 
             local_actions = np.insert(local_actions, 1, 0, axis=1)
             
-            raw_yaw_world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),self.w_yaw, type=1)
+            raw_yaw_world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),self.w_yaw, type=self.type)
             
             raw_yaw_world_actions = np.delete(raw_yaw_world_actions, 1, axis=1)
             world_actions = compute_yaw_from_xy(raw_yaw_world_actions, self.w_yaw)

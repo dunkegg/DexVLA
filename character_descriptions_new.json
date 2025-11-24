@@ -1,0 +1,187 @@
+{
+  "female_2": {
+    "description": ["The heavy-set female with dark skin tone, wearing a light beige short-sleeve top and dark pants",
+                    "The human wearing a white short-sleeved T-shirt and dark gray trousers."],
+    "tag": "None"
+  },
+  "female_3": {
+    "description": ["The medium-build female with medium skin tone, wearing a dark green long-sleeve top and matching green pants",
+                    "The human wearing a dark green long-sleeve top and green pants."],
+    "tag": "None"
+  },
+  "female_6": {
+    "description": ["The medium-build female with light skin tone, dressed in a full beige bodysuit.",
+                    "The human wearing a beige full-body outfit."], 
+    "tag": "None"
+  },
+  "female_8": {
+    "description": ["The curvy female with medium to dark skin tone, dressed in a long-sleeve black top and black pants.",
+                    "The human wearing a black long-sleeve top and black pants."],
+    "tag": "None"
+  },
+
+  "female_10": {
+    "description": ["The medium-build female with light skin tone, wearing a dark off-shoulder top and dark gray pants.",
+                    "The human wearing a dark off-shoulder top."],
+    "tag": "None"
+  },
+
+
+  "female_13": {
+    "description": ["The curvy female with light skin tone, wearing a black long-sleeve top and brown pants.",
+                    "The human wearing a black long-sleeve top and brown pants."],
+    "tag": "None"
+  },
+  "female_14": {
+    "description": ["The medium-build female with medium skin tone, dressed in a fitted gray long-sleeve top and matching gray leggings.",
+                    "The human wearing a gray long-sleeve top,W and gray leggings with white stripes."],
+    "tag": "None"
+  },
+  "female_15": {
+    "description": ["The medium-build female with light to medium skin tone, wearing a long-sleeve dark red top and black pants.",
+                    "The human wearing a dark red long-sleeve top and black pants."],
+    "tag": "None"
+  },
+
+
+  "female_19": {
+    "description": ["The fit female with light to medium skin tone, wearing a sleeveless red and black top with matching short bottoms and long black boots.",
+                    "The person wearing a strange colored patterned top and long boots."],
+    "tag": "None"
+  },
+  "female_20": {
+    "description": ["The heavy-set female with medium to dark skin tone, wearing a dark long-sleeve top and matching dark pants.",
+                    "The person wearing dark gray long sleeves and light brown pants."],
+    "tag": "None"
+  },
+  "female_22": {
+    "description": ["The curvy female with dark skin tone, wearing a tight black long-sleeve top with an open back and matching black pants.",
+                    "A person wearing a deep blue leather jacket."],  
+    "tag": "None"
+  },
+
+
+  "female_23": {
+    "description": ["The curvy female with light skin tone, wearing an off-shoulder greenish-blue top with decorative back details and matching pants.",
+                    "The person wearing a strange colored top and light blue jeans."],
+    "tag": "None"
+  },
+
+  "female_25": {
+    "description": ["The curvy female with medium to dark skin tone, wearing a form-fitting red long-sleeve top and matching red pants.",
+                    "The person wearing a red long-sleeve top and red pants.",
+                    "A person dressed entirely in red."],
+
+    "tag": "None"
+  },
+  "female_26": {
+    "description": ["The medium-build female with light skin tone, wearing a red off-shoulder crop top and dark fitted pants.",
+                    "The person wearing a red off-shoulder crop top and dark pants."],
+    "tag": "None"
+  },
+
+  "female_27": {
+    "description": ["The curvy female with medium skin tone, wearing a fitted black long-sleeve top and matching black pants.",
+                    "A person dressed entirely in black."],
+    "tag": "None"
+  },
+
+
+  "female_31": {
+    "description": "The women with light yellow skin tone, wearing a slate blue long-sleeve top and matching black pants.",
+    "tag": "None"
+  },
+
+  "female_32": {
+    "description": ["The medium-build female wearing a floral-patterned dark top with green sleeves and matching green pants.",
+                    "The person wearing a floral-patterned top."],
+    "tag": "None"
+  },
+
+
+  "male_0": {
+    "description": ["The fit male with medium skin tone, wearing a dark green tactical outfit with a brown utility belt and matching pants.",
+                    "A person wearing military uniform."],    
+    "tag": "None"
+  },
+
+  "male_1": {
+    "description": "The stocky male wearing a short-sleeve grey top with a red waistband and dark pants.",
+    "tag": "None"
+  },
+
+
+
+  "male_4": {
+    "description": "The person wearing tan pants with a blue waistband.",
+    "tag": "None"
+  },
+
+  "male_6": {
+    "description": ["The male wearing a red and grey long-sleeve top with yellow accents and matching grey pants with yellow patches.",
+                    "The person wearing a long-sleeve top with yellow accents and pants with yellow patches."],              
+    "tag": "None"
+  },
+
+  "male_7": {
+    "description": ["The muscular male wearing a brown patterned long-sleeve top and dark green shorts.",
+                    "The person wearing a brown patterned top and green pants."],
+    "tag": "None"
+  },
+
+
+
+  "male_10": {
+    "description": ["A person wearing a black vest and black pants."],
+    "tag": "A"
+  },
+
+
+  "male_12": {
+    "description": ["The medium-build male wearing a fitted dark olive long-sleeve top and matching pants.",
+                    "The person wearing a dark olive long-sleeve top and matching pants."],
+    "tag": "None"
+  },
+
+  "male_13": {
+    "description": ["The medium-build male wearing a dark blue futuristic-style long-sleeve top and beige pants.",
+                    "A person wearing a blue shirt with white patterns."],
+    "tag": "None"
+  },
+
+
+
+  "male_17": {
+    "description": ["The fit male with light to medium skin tone, wearing a blue and red superhero-style bodysuit.",
+                    "The person wearing a blue bodysuit with red boots."],
+    "tag": "None"
+  },
+
+
+  "male_29": {
+    "description": ["A person wearing black and white striped clothes and pants"],
+    "tag": "None"
+  },
+
+
+
+  "male_50": {
+    "description": ["The muscular male wearing a light gray armored suit with dark gray accents and a segmented, sci-fi-inspired design on the back and limbs.",
+                    "The person wearing a light gray armored suit with dark gray accents."],
+    "tag": "None"
+  },
+
+  "male_52": {
+    "description": ["The fit male wearing a bright red long-sleeve top with a thick black horizontal stripe across the back, paired with grayish pants and red socks.",
+                    "The person wearing a red long-sleeve top with a black horizontal stripe."],
+    "tag": "None"
+  },
+
+
+  "male_56": {
+    "description": ["The male wearing a solid dark blue long-sleeve top and matching dark blue fitted pants.",
+
+                    "The person in a dark blue long-sleeve top and dark blue pants."],
+    "tag": "None"
+  }
+}

@@ -199,7 +199,12 @@ def find_scene_path(cfg, scene_id):
         if full_scene_name.endswith(f"-{scene_id}"):
             # 构建完整的场景路径
             scene_path = os.path.join(scene_dir, full_scene_name, scene_id + ".basis.glb")
-            return scene_path
+            return scene_path, None
+        elif full_scene_name.endswith(f"{scene_id}"):
+            # 构建完整的场景路径
+            scene_path = os.path.join(scene_dir, full_scene_name, scene_id + ".glb")
+            pose_data_path = os.path.join(scene_dir, 'connectivity', scene_id + "_connectivity.json")
+            return scene_path, pose_data_path
 
     print(f"Scene ID '{scene_id}' not found in {scene_dir}")
     return None   

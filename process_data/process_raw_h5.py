@@ -448,9 +448,9 @@ if __name__=="__main__":
     args.frames_dir ="data/frames/single_follow"
     args.dst_dir = "data/proc_data/single_follow"
 
-    args.src_dir = "data/raw_data/multi_follow_mix"
-    args.frames_dir ="data/frames/multi_follow_mix"
-    args.dst_dir = "data/proc_data/multi_follow_mix"
+    args.src_dir = "data/raw_data/multi_follow_clear"
+    args.frames_dir ="data/frames/multi_follow_clear"
+    args.dst_dir = "data/proc_data/multi_follow_clear"
 
     args.viz = "results/multi_follow"
     args.history = 10

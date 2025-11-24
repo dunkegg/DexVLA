@@ -50,7 +50,7 @@ def process_folder(input_folder: str, output_folder: str, tag="mirror"):
 if __name__ == "__main__":
     # 修改路径：输入文件夹 + 输出文件夹
     process_folder(
-        input_folder="data/split_data/single_follow",
-        output_folder="data/split_data/mirror_sum",
+        input_folder="data/split_data/multi_follow_clear",
+        output_folder="/mnt/pfs/3zpd5q/code/train/DexVLA/data/split_data/multi_follow_clear_mirror",
         tag="mirror"
     )

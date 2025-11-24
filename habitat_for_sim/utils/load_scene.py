@@ -7,10 +7,10 @@ from habitat_for_sim.utils.explore.explore_habitat import (
 from habitat_for_sim.agent.path_generator import generate_path
 from human_follower.walk_behavior import get_path_with_time
 import magnum as mn
-
+import numpy as np
 
 def load_simulator(cfg):
-    scene_mesh_dir = find_scene_path(cfg, cfg.current_scene)
+    scene_mesh_dir, _ = find_scene_path(cfg, cfg.current_scene)
     sim_settings = {
         "scene": scene_mesh_dir,
         "default_agent": [0],
@@ -100,7 +100,7 @@ def generate_path_from_scene(obj_data, pathfinder,min_distance = 5 ,human_fps = 
         
 
         #轨迹优化流水线
-        new_path = generate_path(path, pathfinder, visualize=False)
+        new_path = generate_path(path, pathfinder,filt_distance=0.1, num_points_between = 5, resolution=1024,visualize=False)
         
         #print(path[0])
         #print(path)
@@ -138,3 +138,111 @@ def generate_path_from_scene(obj_data, pathfinder,min_distance = 5 ,human_fps = 
         return None
     
     return dense_path
+
+def generate_segment(start_position, goal_position, pathfinder, human_fps=5, human_speed=0.7, check_height = True):
+    # Shortest path
+    shortest_path = habitat_sim.ShortestPath()
+    shortest_path.requested_start = start_position
+    shortest_path.requested_end = goal_position
+
+
+    if not pathfinder.find_path(shortest_path):
+        if check_height:
+            return None
+        else:
+            shortest_path.points = [start_position, goal_position]
+
+    direction = shortest_path.points[-1] - shortest_path.points[0] 
+    if np.linalg.norm(direction) < 1e-4:
+        shortest_path.points = [start_position, goal_position]
+    # Floor consistency check
+    start_floor = start_position[1]
+    goal_floor = goal_position[1]
+    if abs(start_floor - goal_floor) > 1 and check_height:
+        return None
+
+    floor_heights = [p[1] for p in shortest_path.points]
+    if max(floor_heights) - min(floor_heights) > 1 and check_height: 
+        return None
+
+    # Expand/optimize path
+    new_path = generate_path(
+        shortest_path.points, 
+        pathfinder,
+        num_points_between=1,
+        resolution=256,
+        filt_distance=1e-4,
+        visualize=False,
+        opt=False
+    )
+
+    dense_path = get_path_with_time(
+        new_path,
+        time_step=1/human_fps,
+        speed=human_speed
+    )
+
+    # Height smoothing (same as your logic)
+    height_bias = 0
+    for i in range(len(dense_path)):
+        pos, quat, yaw = dense_path[i]
+        new_pos = mn.Vector3(pos.x, pos.y - height_bias, pos.z)
+        dense_path[i] = (new_pos, quat, yaw)
+
+    # Height jump detection
+    height_jump_threshold = 0.04
+    max_allowed_jumps = 5
+    jump_count = 0
+    normal_height = 0.083759
+
+    for i in range(1, len(dense_path)):
+        curr_height = dense_path[i][0].y
+        if curr_height - normal_height > height_jump_threshold:
+            jump_count += 1
+            if jump_count >= max_allowed_jumps and check_height:
+                return None
+
+    return dense_path
+
+def generate_full_path_from_coords_with_index(coords, pathfinder, human_fps=5, human_speed=0.7):
+    full_path = []
+    index_map = []  # index_map[i] = full_path indices corresponding to coords[i]→coords[i+1]
+
+    current_start_idx = 0  # full_path 的起始下标
+
+    for i in range(len(coords) - 1):
+        start_pos = coords[i]
+        end_pos = coords[i + 1]
+
+        segment = generate_segment(
+            start_pos,
+            end_pos,
+            pathfinder,
+            human_fps,
+            human_speed
+        )
+
+        if segment is None:
+            print(f"Skipping segment {i}: no valid path from {start_pos} to {end_pos}")
+            return None, None
+
+        # Avoid duplicate first point
+        if full_path:
+            segment = segment[1:]
+
+        # segment 的长度
+        seg_len = len(segment)
+
+        # full_path 拼接
+        full_path.extend(segment)
+
+        # 记录 segment 在 full_path 中的 start/end index ⭐
+        seg_start = current_start_idx
+        seg_end = current_start_idx + seg_len - 1
+
+        index_map.append((seg_start, seg_end))
+
+        current_start_idx += seg_len
+
+    return full_path, index_map
+

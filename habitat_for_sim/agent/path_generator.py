@@ -416,7 +416,7 @@ def convert_path(raw_path):
         # qt.quaternion(w, quat_raw[1], y, z)     
         out.append((pos_vec,quat,yaw))
     return out
-def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_rotation_angle=15, filt_distance = 0.5,visualize=False):
+def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_rotation_angle=15, filt_distance = 0.5, num_points_between = 5 , resolution = 1024 ,visualize=False, opt = True):
     """
     生成高粒度路径，先插值，再代价场优化，最后处理方向并进行旋转插值。
 
@@ -434,10 +434,10 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
     # 滑动窗口初始化
     height_window = []
     new_path = []
-    num_points_between = 5  # 插值点数
-    resolution = 1024  # 代价场优化: 分辨率越高优化越精细
+    num_points_between = num_points_between  # 插值点数
+    resolution = resolution  # 代价场优化: 分辨率越高优化越精细
     agent_height = 1.5
-
+    length = 0
     # Step 1: 插值路径
     print(f'Path length: {len(path)}')
     for i in range(len(path) - 1):
@@ -446,16 +446,13 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
 
         # 插值生成中间点
         direction = end - start
-        if np.linalg.norm(direction) < 1e-1:
+        if np.linalg.norm(direction) < 1e-4:
             path[i + 1] = path[i]
             continue
-        
+        length+=np.linalg.norm(direction)
         orientation = direction / np.linalg.norm(direction) 
         quaternion = direction_to_combined_quaternion(orientation)
         
-        if np.linalg.norm(direction) < 1e-1:
-            path[i + 1] = path[i]
-            continue
 
         interpolated_points = [
             start + (end - start) * t / (num_points_between + 1)
@@ -464,6 +461,8 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
         for point in interpolated_points:
             new_path.append((point, quaternion))
 
+    if length < 1e-1 or not opt:
+        return convert_path([new_path[0],new_path[1]])
     # Step 2: 代价场优化
     agent_beginning_location = new_path[0]
     optimized_path = generate_path_with_cost_optimization(
@@ -482,7 +481,7 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
     
         # 计算朝向向量（单位向量）
         direction = end - start
-        if np.linalg.norm(direction) < 1e-1:
+        if np.linalg.norm(direction) < 1e-4:
             continue
     
         orientation = direction / np.linalg.norm(direction)
@@ -502,6 +501,8 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
         # 加入路径点
         processed_path.append((start.tolist(), quaternion))
     
+    if len(processed_path)<3:
+        return convert_path(processed_path)
     # 添加最后一个点
     # processed_path.append((optimized_path[-1], direction_to_combined_quaternion(np.array([0, 0, 1]))))
 

@@ -174,8 +174,8 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
 
 if __name__ == "__main__":
     # 设置源目录和目标目录
-    src_dir = "./data/proc_data/multi_follow_mix"  # 当前目录
-    dst_dir = "./data/split_data/multi_follow_mix"  # 输出目录
+    src_dir = "./data/proc_data/multi_follow_clear"  # 当前目录
+    dst_dir = "./data/split_data/multi_follow_clear"  # 输出目录
     # 设置要保存的key
 
     process_all_hdf5_in_directory(src_dir, dst_dir)
