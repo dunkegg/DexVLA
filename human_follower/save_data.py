@@ -146,3 +146,21 @@ def save_walk_data_to_h5(observations, walk_path, h5_path="output.h5"):
         # grp.create_dataset("instructions", data=instr_json, dtype=dt)
 
     print(f"✅  HDF5 saved to: {h5_path}")
+
+
+def save_rotate_obj_data_to_h5(observations, walk_path, h5_path, episode_data):
+
+    with h5py.File(h5_path, "w") as f:
+
+        save_obs_list(observations, f, sensor_key="color_0_0")
+
+        path_np = np.empty((len(walk_path), 8), np.float32)
+        for i, (pos, quat, yaw) in enumerate(walk_path):
+            path_np[i, :3] = to_vec3(pos)       # 位置
+            path_np[i, 3:7] = to_quat(quat)    # 四元数
+            path_np[i, 7] = yaw
+        f.create_dataset("rel_path", data=path_np, compression="gzip")
+        f.create_dataset("object_environment", data=np.string_(episode_data["object_environment"]))
+        f.create_dataset("object_category", data=np.string_(episode_data["object_category"]))
+
+    print(f"✅  HDF5 saved to: {h5_path}")

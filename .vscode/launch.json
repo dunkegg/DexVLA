@@ -202,7 +202,7 @@
         "request": "launch",
 
         // 要执行的脚本
-        "program": "${workspaceFolder}/process_data/process_raw_h5.py",
+        "program": "${workspaceFolder}/process_data/process_raw_rxr.py",
 
         // 传递给脚本的 3 个参数
         "args": [
@@ -245,7 +245,7 @@
         "name": "sample rxr",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/sample_rxr_obj.py",
+        "program": "${workspaceFolder}/sample_rxr.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -253,6 +253,21 @@
         },
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_rxr.yaml"
+        ],
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
+      },
+      {
+        "name": "sample obj",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/sample_obj.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_obj.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },

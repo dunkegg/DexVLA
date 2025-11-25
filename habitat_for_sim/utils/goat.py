@@ -479,3 +479,119 @@ def convert_to_scene_objects(structured_data, filtered_episodes, pathfinder,min_
             if not sample_all:
                 break
     return [DotAccessDict(scene_object) for scene_object in scene_objects]
+from scipy.spatial.transform import Rotation as R
+from tqdm import tqdm
+def convert_to_scene_objnav_rotate(structured_data, filtered_episodes, pathfinder, 
+                                            min_distance=3.0, max_distance=5.0, init_density=1.0, sample_all=True):
+
+    scene_objects = []
+
+    for episode in tqdm(filtered_episodes, desc="Processing episodes", dynamic_ncols=True):
+        episode_id = episode.get("episode_id")
+        scene_id = episode.get("scene_id")
+        valid_tasks = episode.get("valid_tasks", [])
+
+        for task in valid_tasks:
+            object_id = task[2]
+            object_found = None
+
+            # 查找 object
+            for category, instances in structured_data.items():
+                for instance in instances:
+                    if instance.get("object_id") == object_id:
+                        object_found = instance
+                        break
+                if object_found:
+                    break
+
+            if not object_found:
+                continue
+
+            object_category = object_found.get("object_category")
+            obj_center = np.array(object_found.get("goal_location"))
+            view_points = object_found.get("view_points", [])
+
+            if len(view_points) == 0:
+                continue 
+
+            candidate_points = []
+
+            step = init_density
+            radii = np.arange(min_distance, max_distance + step, step)
+            angles = np.linspace(0, 2*np.pi, int(np.ceil(2*np.pi*max_distance/init_density)), endpoint=False)
+
+            for r in radii:
+                for theta in angles:
+                    x = obj_center[0] + r * np.cos(theta) 
+                    z = obj_center[2] + r * np.sin(theta)
+                    y = view_points[0]["agent_state"]["position"][1]                  
+                    candidate = np.array([x, y, z])
+                    candidate = np.array([x, y, z])
+
+                    # 检查与已有采样点最小间隔
+                    if not all(np.linalg.norm(candidate - np.array(p)) >= init_density for p in candidate_points):
+                        continue
+
+                    # 检查是否能到达至少一个 viewpoint
+                    reachable = False
+                    for vp in view_points:
+                        vp_pos = np.array(vp["agent_state"]["position"])
+                        shortest_path = habitat_sim.ShortestPath()
+                        shortest_path.requested_start = candidate
+                        shortest_path.requested_end = vp_pos
+                        if pathfinder.find_path(shortest_path):
+                            reachable = True
+                            break
+
+                    if not reachable:
+                        continue
+
+                    candidate_points.append(candidate)
+
+            for start_pos in candidate_points:
+                vec = obj_center - start_pos
+                base_yaw = np.arctan2(vec[2], vec[0])
+
+                if np.random.rand() < 0.5:
+                    random_delta = np.random.uniform(np.pi / 2, np.pi)
+                else:
+                    random_delta = np.random.uniform(-np.pi, -np.pi / 2)
+
+                final_yaw = base_yaw + random_delta
+                final_yaw = normalize_angle(final_yaw)
+                quat = R.from_euler('y', final_yaw).as_quat()  # 只考虑水平角
+
+                scene_object = {
+                    "episode_id": episode_id,
+                    "scene_id": scene_id,
+                    "object_environment": object_found.get("lang_desc"),
+                    "object_category": object_category,
+                    "start_position": start_pos.tolist(),
+                    "start_rotation": quat.tolist(),
+                    "start": {
+                        "position": start_pos.tolist(),
+                        "rotation": quat.tolist()
+                    },
+                    "goal": {
+                        "position": obj_center.tolist(),
+                        "rotation": [0, 0, 0, 1]
+                    },
+                    "goals": [],
+                    "reference_replay": [],
+                    "steps": [],
+                    "path": []
+                }
+
+                scene_objects.append(scene_object)
+                if not sample_all:
+                    break
+            if not sample_all:
+                break
+
+    return [DotAccessDict(scene_object) for scene_object in scene_objects]
+
+def normalize_angle(angle):
+    """
+    将角度归一化到 [-pi, pi]
+    """
+    return (angle + np.pi) % (2 * np.pi) - np.pi

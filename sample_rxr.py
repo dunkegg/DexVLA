@@ -165,7 +165,7 @@ if __name__ == '__main__':
     success_count = 0
     episodes_count = 0
     jump_idx = get_max_episode_number(img_output_dir)+1
-    jump_idx = 498
+    jump_idx = 752
     with open("character_descriptions_new.json", "r") as f:
         id_dict = json.load(f)
     # name_folders = [f"female_{i}" for i in range(35)] + [f"male_{i}" for i in range(65)]
@@ -268,7 +268,7 @@ if __name__ == '__main__':
                 continue
 
             
-            save_walk_data_to_h5(output_data["obs"], walk_path= followed_path, h5_path=f"data/raw_data/rxr/episode_{all_index}.hdf5")
+            save_walk_data_to_h5(output_data["obs"], walk_path= followed_path, h5_path=f"data/raw_data/rxr2/episode_{all_index}.hdf5")
             if all_index < 50:
                 video_output = video_output_dir
                 os.makedirs(video_output, exist_ok=True)

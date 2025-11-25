@@ -3,7 +3,7 @@ import pickle
 from torchvision import transforms
 from habitat_for_sim.agent.path_generator import direction_to_combined_quaternion
 from habitat_for_sim.sim.habitat_utils import local2world,habitat_quat_to_magnum ,to_vec3, to_quat, shortest_angle_diff, load_humanoid
-from process_data.process_raw_h5 import world2local_target
+from process_data.process_raw_follow import world2local_target
 from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 from data_utils.utils import set_seed
 import torch

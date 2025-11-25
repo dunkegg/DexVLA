@@ -608,3 +608,91 @@ def walk_along_path(
     print("walk done")
     return output
 
+from scipy.spatial.transform import Rotation as R
+def rotate_to_target(
+    all_index,
+    simulator,
+    target_pos,
+    fps=10,
+    timestep_gap=0.2,
+    robot=None,
+    angle_threshold=0.17,  # 停止旋转的夹角阈值（弧度）
+    rotation_step=0.1,     # 每步旋转角度（弧度）
+):
+    """
+    控制机器人旋转到目标方向（水平面），直到夹角小于 angle_threshold
+    """
+
+    if robot is not None:
+        robot.set_episode_id(all_index)
+
+    observations = []
+    trajectory = []
+
+    # 获取初始状态
+    agent_state = simulator.agents[0].get_state()
+    agent_pos = np.array(agent_state.position, dtype=np.float64)
+
+    # 水平面目标方向
+    vec_to_target = target_pos - agent_pos
+    vec_to_target[1] = 0  # 忽略高度
+    if np.linalg.norm(vec_to_target) < 1e-6:
+        vec_to_target = np.array([0.0, 0.0, 1.0])
+    else:
+        vec_to_target /= np.linalg.norm(vec_to_target)
+
+    max_steps = int(2 * np.pi / rotation_step)  # 最多旋转一圈
+
+    for step in range(max_steps):
+        agent_state = simulator.agents[0].get_state()
+        pos = np.array(agent_state.position, dtype=np.float64)
+
+        # 获取当前 yaw
+        quat_raw = agent_state.rotation
+        quat = np.array([quat_raw.x, quat_raw.y, quat_raw.z, quat_raw.w], dtype=np.float64)
+        current_yaw = R.from_quat(quat).as_euler('xyz')[1]
+
+        trajectory.append((pos, quat))
+
+        # ----------------- 水平面 forward_vec -----------------
+        # Habitat坐标系：X-right, Y-up, Z-forward(-Z前)
+        forward_vec = np.array([np.sin(current_yaw), -np.cos(current_yaw)])  # X-Z平面投影
+        target_vec = np.array([vec_to_target[0], vec_to_target[2]])
+        target_vec /= np.linalg.norm(target_vec)
+
+        # 计算 signed angle
+        cross = forward_vec[0]*target_vec[1] - forward_vec[1]*target_vec[0]  # Z方向垂直标量
+        dot = np.dot(forward_vec, target_vec)
+        angle = np.arctan2(cross, dot)
+        angle_diff = abs(angle)
+
+        # 判断是否到达阈值
+        if angle_diff < angle_threshold:
+            # print(f"rotate finished at step {step}, angle_diff={angle_diff:.4f}")
+            break
+
+        # 限制每步旋转不超过 rotation_step
+        delta = np.clip(angle, -rotation_step, rotation_step)
+        new_yaw = current_yaw + delta
+
+        # 应用旋转
+        new_quat = R.from_euler('y', new_yaw).as_quat()
+        agent_state.rotation = new_quat
+        simulator.agents[0].set_state(agent_state)
+
+        # 物理步进
+        simulator.step_physics(1.0 / fps)
+
+        # 采集观测
+        obs = simulator.get_sensor_observations(0)
+        observations.append(obs)
+
+        if robot is not None:
+            robot.set_obs(obs['color_0_0'], step * timestep_gap, save=True)
+
+    return {
+        "obs": observations,
+        "trajectory": trajectory,
+        "follow_result": True,
+    }
+
