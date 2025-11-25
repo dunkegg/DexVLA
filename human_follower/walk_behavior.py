@@ -608,7 +608,9 @@ def walk_along_path(
     print("walk done")
     return output
 
-from scipy.spatial.transform import Rotation as R
+# from scipy.spatial.transform import Rotation as R
+import quaternion as qt
+from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 def rotate_to_target(
     all_index,
     simulator,
@@ -649,8 +651,11 @@ def rotate_to_target(
 
         # 获取当前 yaw
         quat_raw = agent_state.rotation
-        quat = np.array([quat_raw.x, quat_raw.y, quat_raw.z, quat_raw.w], dtype=np.float64)
-        current_yaw = R.from_quat(quat).as_euler('xyz')[1]
+        quat = np.array([quat_raw.w, quat_raw.x, quat_raw.y, quat_raw.z], dtype=np.float64)
+        # current_yaw = R.from_quat(quat).as_euler('xyz')[1]
+        #
+        quat_qt = qt.quaternion(quat[0], quat[1], quat[2], quat[3])
+        current_yaw, _ = quat_to_angle_axis(quat_qt)
 
         trajectory.append((pos, quat, current_yaw))
 
@@ -676,7 +681,8 @@ def rotate_to_target(
         new_yaw = current_yaw + delta
 
         # 应用旋转
-        new_quat = R.from_euler('y', new_yaw).as_quat()
+        # new_quat = R.from_euler('y', new_yaw).as_quat()
+        new_quat = quat_from_angle_axis(new_yaw, np.array([0, 1, 0]))
         agent_state.rotation = new_quat
         simulator.agents[0].set_state(agent_state)
 

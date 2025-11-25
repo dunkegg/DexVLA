@@ -5,6 +5,7 @@ import math
 import os
 import numpy as np
 import habitat_sim
+from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 def quaternion_inverse(q):
     """
     计算单位四元数 q 的逆 (w, x, y, z) -> (w, -x, -y, -z).
@@ -559,8 +560,8 @@ def convert_to_scene_objnav_rotate(structured_data, filtered_episodes, pathfinde
 
                 final_yaw = base_yaw + random_delta
                 final_yaw = normalize_angle(final_yaw)
-                quat = R.from_euler('y', final_yaw).as_quat()  # 只考虑水平角
-
+                # quat = R.from_euler('y', final_yaw).as_quat()  # 只考虑水平角
+                quat =  quat_from_angle_axis(final_yaw, np.array([0, 1, 0]))
                 scene_object = {
                     "episode_id": episode_id,
                     "scene_id": scene_id,
@@ -587,7 +588,7 @@ def convert_to_scene_objnav_rotate(structured_data, filtered_episodes, pathfinde
                     break
             if not sample_all:
                 break
-
+        break
     return [DotAccessDict(scene_object) for scene_object in scene_objects]
 
 def normalize_angle(angle):

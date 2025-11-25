@@ -179,7 +179,7 @@ if __name__ == '__main__':
 
         # 获取 episode 候选点
         episodes = convert_to_scene_objnav_rotate(structured_data, filtered_episodes, pathfinder, 
-                                                  min_distance=3.0, max_distance=5.0, sample_all=True)
+                                                  min_distance=3.0, max_distance=5.0, sample_all=False)
 
         print("begin rotation data collection")
         for episode_idx, episode_data in enumerate(tqdm(episodes)):
@@ -199,7 +199,8 @@ if __name__ == '__main__':
             simulator = load_simulator(cfg)
             reset_state = simulator.agents[0].get_state()
             reset_state.position = np.array(episode_data.start_position)
-            reset_state.rotation = np.array(episode_data.start_rotation)
+            # reset_state.rotation = np.array(episode_data.start_rotation)
+            reset_state.rotation = episode_data.start_rotation
             simulator.agents[0].set_state(reset_state)
 
             obs = simulator.get_sensor_observations(0)['color_0_0']
