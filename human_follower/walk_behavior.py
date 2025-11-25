@@ -652,7 +652,7 @@ def rotate_to_target(
         quat = np.array([quat_raw.x, quat_raw.y, quat_raw.z, quat_raw.w], dtype=np.float64)
         current_yaw = R.from_quat(quat).as_euler('xyz')[1]
 
-        trajectory.append((pos, quat))
+        trajectory.append((pos, quat, current_yaw))
 
         # ----------------- 水平面 forward_vec -----------------
         # Habitat坐标系：X-right, Y-up, Z-forward(-Z前)

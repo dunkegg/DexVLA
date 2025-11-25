@@ -165,7 +165,7 @@ if __name__ == '__main__':
     success_count = 0
     episodes_count = 0
     jump_idx = get_max_episode_number(img_output_dir)+1
-    jump_idx = 752
+    jump_idx = 0
     with open("character_descriptions_new.json", "r") as f:
         id_dict = json.load(f)
     # name_folders = [f"female_{i}" for i in range(35)] + [f"male_{i}" for i in range(65)]
@@ -232,12 +232,15 @@ if __name__ == '__main__':
 
             # ###label
 
-
-            reset_state = simulator.agents[0].get_state()
-            reset_state.position = followed_path[0][0]
-            reset_state.rotation = to_quat(followed_path[0][1])
-            simulator.agents[0].set_state(reset_state)
-            obs = simulator.get_sensor_observations(0)['color_0_0']
+            try:
+                reset_state = simulator.agents[0].get_state()
+                reset_state.position = followed_path[0][0]
+                reset_state.rotation = to_quat(followed_path[0][1])
+                simulator.agents[0].set_state(reset_state)
+                obs = simulator.get_sensor_observations(0)['color_0_0']
+            except Exception as e:
+                print(f"ERROR:   {e}")
+                continue
             black_threshold = 0.3
             # if cfg.multi_humanoids:
             #     black_threshold = 0.1
@@ -268,7 +271,7 @@ if __name__ == '__main__':
                 continue
 
             
-            save_walk_data_to_h5(output_data["obs"], walk_path= followed_path, h5_path=f"data/raw_data/rxr2/episode_{all_index}.hdf5")
+            save_walk_data_to_h5(output_data["obs"], walk_path= followed_path, h5_path=f"data/raw_data/rxr_smooth/episode_{all_index}.hdf5")
             if all_index < 50:
                 video_output = video_output_dir
                 os.makedirs(video_output, exist_ok=True)

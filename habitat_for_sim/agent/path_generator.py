@@ -416,6 +416,51 @@ def convert_path(raw_path):
         # qt.quaternion(w, quat_raw[1], y, z)     
         out.append((pos_vec,quat,yaw))
     return out
+
+def resample_path_xyz(path, num_points=30):
+    path = np.array(path)  # shape (T, 3)
+    T = len(path)
+
+    # 原始点的索引
+    original_idx = np.linspace(0, 1, T)
+
+    # 新轨迹的索引
+    target_idx = np.linspace(0, 1, num_points)
+
+    # 对 xyz 进行独立插值
+    x_new = np.interp(target_idx, original_idx, path[:, 0])
+    y_new = np.interp(target_idx, original_idx, path[:, 1])
+    z_new = np.interp(target_idx, original_idx, path[:, 2])
+
+    # 拼成新路径
+    new_path = [(x_new[i], y_new[i], z_new[i]) for i in range(num_points)]
+    return new_path
+
+def smooth_xyz(path, window_size=3):
+    if len(path) < window_size:
+        return path[:]
+    
+    smoothed = []
+    half = window_size // 2
+    
+    for i in range(len(path)):
+        start = max(0, i - half)
+        end = min(len(path), i + half + 1)
+        
+        window = path[start:end]
+        
+        avg_x = sum(p[0] for p in window) / len(window)
+        avg_y = sum(p[1] for p in window) / len(window)
+        avg_z = sum(p[2] for p in window) / len(window)
+        
+        smoothed.append((avg_x, avg_y, avg_z))
+    
+    return smoothed
+def resample_and_smooth(path, num_points=30, window_size=3):
+    path_30 = resample_path_xyz(path, num_points)
+    smooth_path = smooth_xyz(path_30, window_size)
+    return smooth_path
+
 def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_rotation_angle=15, filt_distance = 0.5, num_points_between = 5 , resolution = 1024 ,visualize=False, opt = True):
     """
     生成高粒度路径，先插值，再代价场优化，最后处理方向并进行旋转插值。
@@ -474,6 +519,10 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
     for i, position in enumerate(optimized_path)
     ]
     #print(optimized_path)
+
+    #滑动窗口
+    optimized_path = resample_and_smooth(optimized_path, num_points=max(5, int(length*5)),window_size=window_size)
+
     processed_path = []    
     for i in range(len(optimized_path) - 1):
         start = np.array(optimized_path[i])

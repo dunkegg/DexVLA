@@ -191,8 +191,6 @@ if __name__ == '__main__':
             if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist_obj.jsonl"):
                 # print(f"{current_scene} :  {episode_id} in blacklist")
                 continue
-
-
             # reset humanoid
             try:
                 simulator.close()
@@ -227,7 +225,8 @@ if __name__ == '__main__':
             # 保存数据
             save_rotate_obj_data_to_h5(
                 output_data["obs"], output_data["trajectory"], 
-                h5_path=f"data/raw_data/obj/episode_{all_index}.hdf5", episode_data = episode_data)
+                h5_path=f"data/raw_data/obj/episode_{all_index}.hdf5", 
+                episode_data = episode_data)
             if all_index < 50:
                 video_output = video_output_dir
                 os.makedirs(video_output, exist_ok=True)

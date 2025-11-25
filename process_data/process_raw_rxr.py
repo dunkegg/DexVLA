@@ -479,7 +479,7 @@ if __name__=="__main__":
     args=ap.parse_args()
 
 
-    args.src_dir = "data/raw_data/rxr"
+    args.src_dir = "data/raw_data/rxr_smooth"
     args.frames_dir ="data/frames/rxr"
     args.dst_dir = "data/proc_data/rxr"
 
