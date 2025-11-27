@@ -104,7 +104,7 @@ class Qwen2VLAProcess:
         )
         input_labels = torch.ones_like(model_inputs['input_ids']) * -100
         if use_reasoning:
-            answer = sample['reasoning'] + "Next action:" + '<|im_end|>'
+            answer =  "Next action:" + sample['reasoning'] + '<|im_end|>'
         else:
             answer = '' + '<|im_end|>'
 

@@ -96,15 +96,12 @@ def plot_actions_and_save_frames(raw_lang, action, frames, save_dir):
     print(f"✅ 共保存 {len(frames)} 张帧图像到: {save_dir}")
 import gc
 class EpisodicDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_path_list, camera_names, norm_stats, episode_ids, episode_len, chunk_size, policy_class, robot=None, rank0_print=print, llava_pythia_process=None, data_args=None):
+    def __init__(self, dataset_path_list, camera_names, norm_stats, episode_len, chunk_size, policy_class, robot=None, rank0_print=print, llava_pythia_process=None, data_args=None):
         super(EpisodicDataset).__init__()
-        self.episode_ids = episode_ids
         self.dataset_path_list = dataset_path_list
         self.camera_names = camera_names
         self.norm_stats = norm_stats
-        self.episode_len = episode_len
         self.chunk_size = chunk_size
-        self.cumulative_len = np.cumsum(self.episode_len)
         self.max_episode_len = max(episode_len)
         self.policy_class = policy_class
         self.llava_pythia_process = llava_pythia_process
@@ -121,18 +118,6 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.transformations = None
         self.rank0_print(f"########################Current Image Size is [{self.data_args.image_size_stable}]###################################")
         self.rank0_print(f"{RED}policy class: {self.policy_class}; augument: {self.augment_images}{RESET}")
-        # a=self.__getitem__(0) # initialize self.is_sim and self.transformations
-        # self.rank0_print('Initializing transformations')
-        # original_size = eval(self.data_args.image_size_stable)  # e.g., (320, 240)
-        # ratio = 0.95
-        # self.transformations = [
-        #     transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
-        #     transforms.Resize(original_size, antialias=True),
-        #     transforms.RandomRotation(degrees=[-5.0, 5.0], expand=False),
-        #     transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5)
-        # ]
-
-
 
         if len(self.camera_names) > 2:
             # self.rank0_print("%"*40)
@@ -143,15 +128,24 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.train_type = True
 
     def __len__(self):
-        return sum(self.episode_len)
+        return len(self.dataset_path_list)
 
     def _locate_transition(self, index):
-        assert index < self.cumulative_len[-1]
-        episode_index = np.argmax(self.cumulative_len > index) # argmax returns first True index
-        # start_ts = index - (self.cumulative_len[episode_index] - self.episode_len[episode_index])
-        start_ts = 0
-        episode_id = self.episode_ids[episode_index]
-        return episode_id, start_ts
+        # index 直接映射到 episode 文件
+        dataset_path = self.dataset_path_list[index]
+        # 打开对应的 .h5 文件，读取 action 的长度
+        try:
+            with h5py.File(dataset_path, 'r') as root:
+                # action 一般是 (N, action_dim)
+                num_steps = root['/action'].shape[0]
+        except Exception as e:
+            self.rank0_print(f"[Warning] Failed to read {dataset_path}: {e}")
+            num_steps = 1  # fallback 防止文件异常时崩溃
+
+        # 在 episode 内随机选择一个时间步
+        start_ts = np.random.randint(0, num_steps)
+
+        return start_ts
 
     def _load_from_nav(self, dataset_path, start_ts=0):
         is_zarr = dataset_path.endswith(".zarr")
@@ -170,7 +164,6 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
 
     def _load_from_h5_internal(self,root, dataset_path, start_ts):
-        start_ts = 0
 
         try: # some legacy data does not have this attribute
             is_sim = root.attrs['sim']
@@ -181,102 +174,70 @@ class EpisodicDataset(torch.utils.data.Dataset):
             compressed = False
         try:
             raw_lang = root['language_raw'][()].decode('utf-8')
-            #wzj
-            old_raw_lang = raw_lang
-            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            # obj_name = root['obj_name'][()].decode('utf-8')
+            # raw_lang = f"Find a {obj_name} in the environment and walk to it"
+            raw_lang = f"Your task is: {raw_lang} You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
             # instruction = root['instruction'][()].decode('utf-8')
+            # instruction = root['obj_name'][()].decode('utf-8')
+            # raw_lang = f"Navigate toward the {instruction} based on the visual observations and predict the future movement trajectory."
         except Exception as e:
-            # self.rank0_print(e)
+            # self.rank0_print(e) 
             self.rank0_print(f"Read {dataset_path} happens {YELLOW}{e}{RESET}")
             exit(0)
         reasoning = " "
         if self.data_args.use_reasoning:
             if 'substep_reasonings' in root.keys():
-                reasoning = root['substep_reasonings'][start_ts].decode('utf-8')
+                reasoning = root['substep_reasonings'][()].decode('utf-8')
             else:
                 try:
                     reasoning = root['reasoning'][0].decode('utf-8')
                 except Exception as e:
                     self.rank0_print(f"Read reasoning from {dataset_path} happens {YELLOW}{e}{RESET}")
                     exit(0)
-        # action = root['/action'][()][:, :2] #wzj xy
-        action = root['/action'][()]
+
+        action_all = root['/action'][()]
+        action = action_all[start_ts]
+        #
+        # action[:, -1] = 1e-4
+        #
         original_action_shape = action.shape
-        episode_len = original_action_shape[0]
+        # episode_len = original_action_shape[0]
 
         # get observation at start_ts only
         qpos = root['/observations/qpos'][start_ts]
-        # qvel = root['/observations/qvel'][start_ts]
         qvel = root['/observations/qpos'][start_ts]
-        image_dict = dict()
-        # video_dict = dict()
-        n_frames = self.data_args.history_images_length
 
+        image_dict = dict()
         cam_name = self.camera_names[0]
 
-        obs_img = root[f'/observations/images/{cam_name}'][()]
+        n_frames = self.data_args.history_images_length
         history_image_seq = root[f'/observations/history_images'][()]
-
         frames = []
+        start_idx = max(0, start_ts - n_frames)
+        history_img_paths = [p.decode('utf-8') for p in history_image_seq[start_idx:start_ts]]
 
-
-        assert n_frames<=len(history_image_seq)
-
-        mirror = root.attrs.get("tag", "") == "mirror"
-
-        # batch_size = 2
-        # # if self.same_type_count == batch_size:
-        # #     self.train_type = random.choice([True, False])
-        # #     self.same_type_count=1
-        # # self.same_type_count += 1
-        
-        # self.train_type = random.choice([True, False])
-        
-        # if self.train_type:
-        #     n_frames = 4
-        #     history_image_seq = history_image_seq[0:5]
-        # else:
-        #     n_frames = 3
-
-
-        rank = int(os.environ.get("RANK", 0))
-        for path_bytes in history_image_seq[-n_frames:]:
-            img_path = path_bytes.decode('utf-8')
-            # img_path = img_path.replace("code/", f"code/train/")
+        if len(history_img_paths) == 0:
+            current_img_path = history_image_seq[start_ts].decode('utf-8')
+            history_img_paths = [current_img_path] * n_frames
+        else:
+            history_img_paths = [history_img_paths[0]] * (n_frames - len(history_img_paths)) + history_img_paths
+        # mirror = root.attrs.get("tag", "") == "mirror"
+        mirror = False
+        for img_path in history_img_paths:
             img = cv2.imread(img_path)
             if mirror:
                 img = cv2.flip(img, 1)
-            if compressed:
-                img = cv2.imdecode(img, 1)
-            img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+            img = cv2.resize(img, eval(self.data_args.image_size_stable))
             frames.append(img)
-
-        # if not self.train_type:
-        img_path = obs_img.decode('utf-8')
-        # img_path = img_path.replace("code/", f"code/train/")
-        img = cv2.imread(img_path)
+        current_img_path = history_image_seq[start_ts].decode('utf-8')
+        img = cv2.imread(current_img_path)
         if mirror:
             img = cv2.flip(img, 1)
-        if compressed:
-            img = cv2.imdecode(img, 1)
-        img = cv2.resize(img,  eval(self.data_args.image_size_stable))
+        img = cv2.resize(img, eval(self.data_args.image_size_stable))
         frames.append(img)
-
-
-        # 存储单帧图像（最后一帧）
         image_dict[cam_name] = frames
 
-
-
-        if is_sim:
-            action = action[start_ts:]
-            action_len = episode_len - start_ts
-        else:
-            action = action[max(0, start_ts - 1):] # hack, to make timesteps more aligned
-            action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
-
-
-        # plot_actions_and_save_frames(old_raw_lang, action, frames, 'check_hdf5')
+        action_len = len(action)
         return original_action_shape, action, action_len, image_dict, frames, qpos, qvel, raw_lang, reasoning
 
 
@@ -310,55 +271,30 @@ class EpisodicDataset(torch.utils.data.Dataset):
             else:
                 self.rank0_print(f"[Retry {attempt+1}] No result returned from {dataset_path}")
         raise RuntimeError(f"Failed to load {dataset_path} after {max_retries} retries.")
-
+    
+    #针对episode进行随机采样sample
     def __getitem__(self, index):
-        episode_id, start_ts = self._locate_transition(index)
-        fallback_offsets = [0, 1, -1]
+        # sample 随机索引
+        dataset_path = self.dataset_path_list[index]
+        start_ts = self._locate_transition(index)
 
-        for offset in fallback_offsets:
-            new_id = episode_id + offset
-            if not (0 <= new_id < len(self.dataset_path_list)):
-                continue
-            dataset_path = self.dataset_path_list[new_id]
+        (
+            original_action_shape,
+            action,
+            action_len,
+            image_dict,
+            video,
+            qpos,
+            qvel,
+            raw_lang,
+            reasoning
+        ) = self._load_from_nav(dataset_path, start_ts)
 
-            try:
-                # (
-                #     original_action_shape,
-                #     action,
-                #     action_len,
-                #     image_dict,
-                #     qpos,
-                #     qvel,
-                #     raw_lang,
-                #     reasoning
-                # ) = self._load_from_h5(dataset_path, start_ts)
-                (
-                    original_action_shape,
-                    action,
-                    action_len,
-                    image_dict,
-                    video,
-                    qpos,
-                    qvel,
-                    raw_lang,
-                    reasoning
-                ) = self._load_from_nav(dataset_path, start_ts)
-                if raw_lang is None or action is None or image_dict is None:
-                    raise ValueError(f"Incomplete sample from {dataset_path}")
-                break
-            except Exception as e:
-                self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Fallback {offset} failed: {dataset_path} | {e}")
-                self.rank0_print(f"[Rank {getattr(self, 'rank', 'N/A')}] Tried files: {[self.dataset_path_list[episode_id + o] for o in fallback_offsets if 0 <= episode_id + o < len(self.dataset_path_list)]}")
-
-        else:
-            raise RuntimeError(
-                f"[Rank {getattr(self, 'rank', 'N/A')}] All fallback loading failed for index {index} "
-                f"(episode_id={episode_id}, tried offsets={fallback_offsets})"
-            )
-
-
+        if raw_lang is None or action is None or image_dict is None:
+            raise ValueError(f"Incomplete sample from {dataset_path}")
 
         # self.is_sim = is_sim
+        self.max_episode_len = max(self.chunk_size, self.max_episode_len)
         padded_action = np.zeros((self.max_episode_len, original_action_shape[1]), dtype=np.float32)
         if self.data_args.delta_control:
             padded_action[:action_len - 1] = action[1:] - action[:-1]
@@ -391,6 +327,16 @@ class EpisodicDataset(torch.utils.data.Dataset):
         image_data = image_data.permute(0, 3, 1, 2)  # [T, H, W, C] → [T, C, H, W]
         video_data = video_data.permute(0, 3, 1, 2)  # [T, H, W, C] → [T, C, H, W]
 
+        # def expand_action_trajectory(action_data, scale=2.0):
+        #     assert action_data.ndim == 2 and action_data.shape[1] == 3, "输入必须是 (T,3)"
+
+        #     expanded_action = action_data.clone()
+        #     expanded_action[:, :2] = action_data[:, :2] * scale   # x、y 全部乘以 2
+        #     expanded_action[:, 2] = action_data[:, 2]             # yaw 保持不变
+
+        #     return expanded_action
+
+        # action_data = expand_action_trajectory(action_data)
 
         # # augmentation
 
@@ -430,8 +376,46 @@ class EpisodicDataset(torch.utils.data.Dataset):
         norm_stats = self.norm_stats
 
         action_data = ((action_data - norm_stats["action_min"]) / (norm_stats["action_max"] - norm_stats["action_min"])) * 2 - 1
+        # action_data = (action_data - norm_stats["action_mean"]) / norm_stats["action_std"]
 
         qpos_data = (qpos_data - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
+
+        # # plt save
+        # save_dir = "/mnt/pfs/3zpd5q/code/zf/DexVLA/hdf5_vln_task/train_test"
+        # local_traj = action_data.to(dtype=torch.float32).cpu().numpy()
+        # x, y, yaw = local_traj[:, 0], local_traj[:, 1], local_traj[:, 2]
+        # fig, ax = plt.subplots(figsize=(5, 5))
+        # ax.plot(x, y, 'b-', linewidth=2, label='Trajectory')
+        # ax.plot(x[0], y[0], 'go', markersize=8, label='Start')
+        # ax.plot(x[-1], y[-1], 'mo', markersize=8, label='End')
+
+        # # 机器人初始位置
+        # ax.plot(0, 0, 'ro', markersize=10, label='Robot Origin')
+
+        # # 朝向箭头
+        # arrow_len = 0.3
+        # robot_direction_x = arrow_len * np.cos(0)
+        # robot_direction_y = arrow_len * np.sin(0)
+        # ax.arrow(0, 0, robot_direction_x, robot_direction_y,
+        #             head_width=0.05, head_length=0.05,
+        #             fc='red', ec='red', linewidth=2)
+
+        # # === 3. 图像设置 ===
+        # ax.set_xlim(-1.0, 1.0)
+        # ax.set_ylim(-1.0, 1.0)
+        # ax.set_title(f"Trajectory)")
+        # ax.set_xlabel("X (m)")
+        # ax.set_ylabel("Y (m)")
+        # ax.legend()
+        # ax.grid(True)
+        # ax.axis('equal')
+        # plt.tight_layout()
+
+        # # === 4. 保存图像 ===
+        # save_path = os.path.join(save_dir, f"trajectory_.png")
+        # plt.savefig(save_path, dpi=150)
+        # plt.close(fig)
+        # print(f"[✅] Saved {save_path}")
 
         sample = {
             'image': image_data,
@@ -473,7 +457,12 @@ def get_norm_stats(dataset_path_list, rank0_print=print,  cache_path="norm_stats
         # 还原 episode lens
         ep_len_val = stats.get("episode_len_value", None)
         ep_len_count = stats.get("episode_len_count", 0)
-        episode_lens = [ep_len_val] * ep_len_count if ep_len_val is not None else None
+        if ep_len_val is not None:
+            episode_lens = [ep_len_val] * ep_len_count
+        elif "episode_lens" in stats:
+            episode_lens = stats["episode_lens"]
+        else:
+            episode_lens = None
 
         return stats, episode_lens    
     
@@ -505,6 +494,9 @@ def get_norm_stats(dataset_path_list, rank0_print=print,  cache_path="norm_stats
     all_qpos_data = torch.cat(all_qpos_data, dim=0)
     all_action_data = torch.cat(all_action_data, dim=0)
 
+    N, S, C = all_action_data.shape  # N = total frames, S = 30, C = 3
+    all_action_data = all_action_data.reshape(-1, C)  # [N*S, 3]
+
     # normalize action data
     action_mean = all_action_data.mean(dim=[0]).float()
     action_std = all_action_data.std(dim=[0]).float()
@@ -523,6 +515,14 @@ def get_norm_stats(dataset_path_list, rank0_print=print,  cache_path="norm_stats
     #          "action_min": action_min.numpy() - eps,"action_max": action_max.numpy() + eps,
     #          "qpos_mean": qpos_mean.numpy(), "qpos_std": qpos_std.numpy(),
     #          "example_qpos": qpos}
+
+    #
+    # scale = 2.0
+    # action_mean[:2] *= scale
+    # action_std[:2] *= scale
+    # action_min[:2] *= scale
+    # action_max[:2] *= scale
+    #
     stats = {
         "action_mean": action_mean.numpy().tolist(),
         "action_std": action_std.numpy().tolist(),
@@ -675,75 +675,112 @@ def load_data(dataset_dir_l, name_filter, camera_names,
 
     if isinstance(dataset_dir_l, str):
         dataset_dir_l = [dataset_dir_l]
+    
+    # 混合数据集
+    # ------------------------------------------------------------------
+    # 1) 读取h5文件
+    # ------------------------------------------------------------------
+    ################################################
+    # if len(dataset_dir_l) == 1:
+    #     base_dir = dataset_dir_l[0]
+    #     sub_dirs = [os.path.join(base_dir, d) for d in os.listdir(base_dir)
+    #                 if os.path.isdir(os.path.join(base_dir, d))]
 
-    # ------------------------------------------------------------------
-    # 1) 构建 “每个数据集” 对应的 h5 列表，并在本层完成所有过滤
-    # ------------------------------------------------------------------
+    #     move_dir = next((d for d in sub_dirs if 'move' in os.path.basename(d).lower()), None)
+    #     rotate_dir = next((d for d in sub_dirs if 'rotate' in os.path.basename(d).lower()), None)
+
+    #     dataset_dir_l = []
+    #     if move_dir:
+    #         dataset_dir_l.append(move_dir)
+    #     if rotate_dir:
+    #         dataset_dir_l.append(rotate_dir)
+
+    # rank0_print(f"Detected dataset dirs: {dataset_dir_l}")
+
+
+    # keep_obj_names = ["chair"]
+
+    # dataset_path_list_list = []
+    
+    # def should_keep_h5(path, keep_obj_names):
+    #     try:
+    #         with h5py.File(path, 'r') as f:
+    #             if "obj_name" in f:
+    #                 obj_name = f["obj_name"][()]
+    #                 if isinstance(obj_name, bytes):
+    #                     obj_name = obj_name.decode("utf-8")
+    #                 return obj_name in keep_obj_names
+    #             else:
+    #                 return False
+    #     except Exception as e:
+    #         print(f"[WARN] Failed to read {path}: {e}")
+    #         return False
+
+    # for d in dataset_dir_l:
+    #     raw_paths = find_all_hdf5(d, skip_mirrored_data)
+    #     filtered = [p for p in raw_paths if name_filter(p)]
+
+    #     # filtered_keep = [p for p in filtered if should_keep_h5(p, keep_obj_names)]
+    #     # dataset_path_list_list.append(filtered_keep)
+    #     dataset_path_list_list.append(filtered)
+
+    # # 直接使用已缓存的数据打印统计
+    # total_after = sum(len(sub) for sub in dataset_path_list_list)
+    # rank0_print(f"{RED}Total HDF5 files: {total_after}")
+    # # 防御性检查，保证至少有两个列表
+    # if len(dataset_path_list_list) < 2:
+    #     rank0_print(f"{RED}Warning: Less than 2 dataset dirs detected. Skipping ratio sampling.{RESET}")
+    # else:
+    #     move_paths = dataset_path_list_list[0]
+    #     rotate_paths = dataset_path_list_list[1]
+
+    #     move_ratio, rotate_ratio = 1,1  # 你想控制的比例
+    #     total_move = len(move_paths)
+    #     total_rotate = len(rotate_paths)
+
+    #     # 计算按比例能取的最大样本数量
+    #     scale = min(total_move / move_ratio, total_rotate / rotate_ratio)
+    #     n_move = int(move_ratio * scale)
+    #     n_rotate = int(rotate_ratio * scale)
+
+    #     # 随机抽样
+    #     sampled_move = random.sample(move_paths, n_move) if len(move_paths) > n_move else move_paths
+    #     sampled_rotate = random.sample(rotate_paths, n_rotate) if len(rotate_paths) > n_rotate else rotate_paths
+
+    #     rank0_print(f"After ratio sampling (move:rotate={move_ratio}:{rotate_ratio}): "
+    #                 f"move={len(sampled_move)}, rotate={len(sampled_rotate)}")
+
+    #     # 替换原始列表
+    #     dataset_path_list_list = [sampled_move, sampled_rotate]
+    
+    ##########################################
+    # 单一数据集
     dataset_path_list_list = []
-    total_before=0
+    # 不考虑比例
     for d in dataset_dir_l:
-        rank = int(os.environ.get("RANK", 0))
-        print(f"!!!!!!!!!!!!!!!!!!!!!!!   Rank: {rank}, data path {d}")
-        # d = d + f"_{rank}"
-        raw_paths = find_all_hdf5(d, skip_mirrored_data, rank0_print=rank0_print)
-        if len(raw_paths) == 0:
-            rank0_print("#2"*20); rank0_print(d)
-        total_before += len(raw_paths)  # 累加原始文件数
-        # ① name_filter
+        raw_paths = find_all_hdf5(d, skip_mirrored_data)
         filtered = [p for p in raw_paths if name_filter(p)]
-        # ② valid h5
-        # filtered = filter_valid_hdf5(filtered, rank0_print)
         dataset_path_list_list.append(filtered)
-
-    # # 打印统计
-    # total_before = sum(len(find_all_hdf5(d, skip_mirrored_data)) for d in dataset_dir_l)
-    # total_after  = sum(len(sub) for sub in dataset_path_list_list)
-    # rank0_print(f"{RED}Valid HDF5 files: {total_after} (filtered from total {total_before}){RESET}")
-    # 直接使用已缓存的数据打印统计
-    total_after = sum(len(sub) for sub in dataset_path_list_list)
-    rank0_print(f"{RED}Valid HDF5 files: {total_after} (filtered from total {total_before}){RESET}")
+    ########################################
+    
     # ------------------------------------------------------------------
-    # 2) 统计每个子数据集 episode 数，再做 train/val split
+    # 2) 统计所有数据集，并进行训练测试集划分
     # ------------------------------------------------------------------
-    num_episodes_l      = [len(sub) for sub in dataset_path_list_list]
-    num_episodes_cumsum = np.cumsum(num_episodes_l)
-
-    # 只在第 0 个数据集上随机打散，保持与原逻辑一致
-    num_episodes_0 = num_episodes_l[0]
-    shuffled_episode_ids_0 = np.random.permutation(num_episodes_0)
-    cut = int(train_ratio * num_episodes_0)
-    train_episode_ids_0 = shuffled_episode_ids_0[:cut]
-    val_episode_ids_0   = shuffled_episode_ids_0[cut:]
-
-    # 其余数据集全部划入 train（与原实现相同）
-    train_episode_ids_l = [train_episode_ids_0] + [
-        np.arange(n) + num_episodes_cumsum[i]
-        for i, n in enumerate(num_episodes_l[1:])
-    ]
-    val_episode_ids_l   = [val_episode_ids_0]
-
-    train_episode_ids = np.concatenate(train_episode_ids_l)
-    val_episode_ids   = np.concatenate(val_episode_ids_l)
+    num_episodes = sum(len(sub) for sub in dataset_path_list_list)
+    rank0_print(f"Total episodes: {num_episodes}")
+    shuffled_episode_ids = np.random.permutation(num_episodes)
+    cut = int(train_ratio * num_episodes)
+    train_episode_ids = shuffled_episode_ids[:cut]
+    val_episode_ids   = shuffled_episode_ids[cut:]
 
     rank0_print(
-        f'\n\nData from: {dataset_dir_l}'
-        f'\n- Train on {[len(x) for x in train_episode_ids_l]} episodes'
-        f'\n- Test  on {[len(x) for x in val_episode_ids_l]} episodes\n'
+        f"\n[Global Split] Train/Val = {train_ratio:.2f}/{1-train_ratio:.2f}"
+        f"\nTrain episodes: {len(train_episode_ids)}"
+        f"\nVal episodes:   {len(val_episode_ids)}\n"
     )
-
     # ------------------------------------------------------------------
-    # 3) 后续统计和数据加载逻辑保持不变
+    # 3) 获取 norm stats
     # ------------------------------------------------------------------
-    dataset_path_list = [p for sub in dataset_path_list_list for p in sub] #same as flatten_list
-    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/split_data/mirror_single.json")
-    rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
-
-    train_episode_len_l = [[all_episode_len[i] for i in ids] for ids in train_episode_ids_l]
-    val_episode_len_l   = [[all_episode_len[i] for i in ids] for ids in val_episode_ids_l]
-
-    
-    train_episode_len = flatten_list(train_episode_len_l)
-    val_episode_len = flatten_list(val_episode_len_l)
     if stats_dir_l is None:
         stats_dir_l = dataset_dir_l
     elif type(stats_dir_l) == str:
@@ -751,30 +788,54 @@ def load_data(dataset_dir_l, name_filter, camera_names,
 
         # calculate norm stats across all episodes
         # 计算 norm_stats 前，加一行过滤
-        stats_paths = flatten_list([
-            find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print)
-            for stats_dir in stats_dir_l
-        ])
 
-        stats_paths = filter_valid_hdf5(stats_paths, rank0_print)   # ← 新增
-        norm_stats, _ = get_norm_stats(stats_paths)
+    stats_paths = flatten_list([
+        find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print)
+        for stats_dir in stats_dir_l
+    ])
+    stats_paths = filter_valid_hdf5(stats_paths, rank0_print)
 
-    # norm_stats, _ = get_norm_stats(flatten_list([find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print) for stats_dir in stats_dir_l]))
+    # 按照采样后的数据集进行均值计算
+    # stats_paths = [p for sub in dataset_path_list_list for p in sub]
+    #
+    norm_stats, all_episode_len = get_norm_stats(stats_paths)
 
-    # calculate norm stats corresponding to each kind of task
-    rank0_print(f'Norm stats from: {[each.split("/")[-1] for each in stats_dir_l]}')
-    # rank0_print(f'train_episode_len_l: {train_episode_len_l}') #wzjprint
+    dataset_path_list = [p for sub in dataset_path_list_list for p in sub]
+    train_episode_len_l = [all_episode_len[i] for i in train_episode_ids]
+    val_episode_len_l   = [all_episode_len[i] for i in val_episode_ids]
 
+    # train_episode_len = flatten_list(train_episode_len_l)
+    # val_episode_len = flatten_list(val_episode_len_l)
+    val_episode_len = val_episode_len_l
+    train_episode_len = train_episode_len_l
 
+    rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
+    # ------------------------------------------------------------------
+    # 4) 实例化容器
+    # ------------------------------------------------------------------
     robot = 'aloha' if config['action_head_args'].action_dim == 14 or ('aloha' in config['training_args'].output_dir) else 'franka'
     # construct dataset and dataloader
-    train_dataset = EpisodicDataset(dataset_path_list, camera_names, norm_stats, train_episode_ids, train_episode_len, chunk_size, policy_class, robot=robot, llava_pythia_process=llava_pythia_process, data_args=config['data_args'])
+    train_dataset = EpisodicDataset(
+        dataset_path_list, camera_names, norm_stats,
+        train_episode_len,
+        chunk_size,
+        policy_class, robot=robot,
+        llava_pythia_process=llava_pythia_process,
+        data_args=config['data_args']
+    )
     # val_dataset is unused
-    val_dataset = EpisodicDataset(dataset_path_list, camera_names, norm_stats, val_episode_ids, val_episode_len, chunk_size, policy_class, robot=robot, llava_pythia_process=llava_pythia_process, data_args=config['data_args'])
+    val_dataset = EpisodicDataset(
+        dataset_path_list, camera_names, norm_stats,
+        val_episode_len,
+        chunk_size,
+        policy_class, robot=robot,
+        llava_pythia_process=llava_pythia_process,
+        data_args=config['data_args']
+    )
 
     sampler_params = {
-        'train': {"batch_size": batch_size_train, 'episode_len_l': train_episode_len_l, 'sample_weights':sample_weights, 'episode_first': config['data_args'].episode_first},
-        'eval': {"batch_size": batch_size_val, 'episode_len_l': val_episode_len_l, 'sample_weights': None, 'episode_first': config['data_args'].episode_first} # unused
+        'train': {"batch_size": batch_size_train, 'sample_weights':sample_weights, 'episode_first': config['data_args'].episode_first},
+        'eval': {"batch_size": batch_size_val, 'sample_weights': None, 'episode_first': config['data_args'].episode_first} # unused
     }
     return train_dataset, val_dataset, norm_stats, sampler_params
 

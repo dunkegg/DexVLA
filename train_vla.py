@@ -261,6 +261,7 @@ def train_bc(train_dataset=None, val_dataset=None, model=None, config=None, samp
     else:
         video = False
 
+    # batch 处理
     data_collator = Qwen2VLADataCollatorForSupervisedDataset(multimodal_processor=processor, computed_type=compute_dtype, tokenizer=tokenizer, video=video)
 
     model.config.use_cache = True
@@ -356,6 +357,7 @@ def main(all_config=None, model_config=None):
 
     # exit(0)
     stats_path = os.path.join(all_config['training_args'].output_dir, f'dataset_stats.pkl')
+    os.makedirs(os.path.dirname(stats_path), exist_ok=True)
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
 

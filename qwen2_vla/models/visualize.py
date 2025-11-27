@@ -5,7 +5,7 @@ import numpy as np
 
 
 # 创建保存文件夹
-output_dir = "plot_in_train/follow_v_prediction"
+output_dir = "plot_in_train/OUTPUT=OUTPUT/qwen2_dexvln_move_and_rotate_10w_60k_4"
 os.makedirs(output_dir, exist_ok=True)
 
 def plot_actions(predicted_actions, noise_pred, target_actions, loss, step):
@@ -37,7 +37,7 @@ def plot_actions(predicted_actions, noise_pred, target_actions, loss, step):
         # 找最大跨度
         x_range = x_all.max() - x_all.min()
         y_range = y_all.max() - y_all.min()
-        max_range = max(x_range, y_range, 0.5)  # ✅ 最小不小于 0.5
+        max_range = max(x_range, y_range, 2.5)  # ✅ 最小不小于 0.5
 
         # 以中心为基础构建正方形范围
         x_center = (x_all.max() + x_all.min()) / 2

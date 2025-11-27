@@ -4,42 +4,35 @@ TASK_CONFIGS = {
             "data/dexvla"
         ],
         'episode_len': 1000,  
-        'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist'] # replacing with your real keys in h5py formatted data
+        'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist'] 
     },
-    'follow_hdf5': { # for nav
+    'objnav_hdf5_door': { # for door_nav
         'dataset_dir': [
-            "data/split_data/single_follow"
+            "/mnt/pfs/3zpd5q/code/zf/train_data/splite_data"
         ],
         'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+        'camera_names': ['cam_high']
     },
-    'multi_follow': { # for nav
+    'objnav_hdf5': { # for obj_nav
         'dataset_dir': [
-            "data/split_data/multi_follow"
+            "/mnt/pfs/3zpd5q/code/zf/train_data/objnav_data"
         ],
         'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+        'camera_names': ['cam_high']
     },
-    'debug': { # for nav
+    'objnav_hdf5_only_rotate': {
         'dataset_dir': [
-            "data/debug_data"
+            "/mnt/pfs/3zpd5q/code/zf/train_data/objnav_data/objnav_rotate_5w"
         ],
         'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+        'camera_names': ['cam_high']
     },
-    'real_finetue': { # for nav
+    'objnav_hdf5_only_move': {
         'dataset_dir': [
-            "data/split_data/single_new"
+            "/mnt/pfs/3zpd5q/code/zf/train_data/objnav_data/objnav_move_5w"
         ],
         'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'mirror_single': { # for nav
-        'dataset_dir': [
-            "data/split_data/mirror_sum"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+        'camera_names': ['cam_high']
     },
 }
 
