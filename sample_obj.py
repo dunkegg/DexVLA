@@ -127,7 +127,74 @@ def add_path_if_valid(path_dict, start_pos, goal_pos, threshold=1.0):
         "goal": goal_pos
     }
     return True
+
+class QwenImageChecker:
+    def __init__(self):
+        from openai import OpenAI
+        self.client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+
+    def check_visibility(self, image_np, obj_name):
+        """
+        输入：numpy 图像，物体名称
+        输出：True / False
+        """
+        import base64
+        import cv2
+        _, buffer = cv2.imencode(".jpg", image_np)
+        encoded_img = base64.b64encode(buffer).decode("utf-8")
+
+        prompt = (
+            f"You must answer in two parts:\n"
+            f"1. Visibility: Clearly state whether the target object \"{obj_name}\" is visible in the image.\n"
+            f"2. Description:\n"
+            f"Output format:\n"
+            f"- Visibility: <yes/no>\n"
+        )
+
+        msg = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded_img}"}}
+            ]
+        }
+
+        response = self.client.chat.completions.create(
+            model="Qwen-30B",
+            messages=[msg]
+        )
+
+        output = response.choices[0].message.content.lower()
+
+        # 简单解析 yes/no
+        if "visibility:" in output:
+            if "yes" in output:
+                return True
+            else:
+                return False
+
+        # fallback（如果 Qwen 输出乱格式）
+        if "yes" in output:
+            return True
+        return False
+
+def quaternion_to_list(q):
+    import numpy as np
+    import quaternion
+    # 如果是 numpy.quaternion 类型
+    if isinstance(q, quaternion.quaternion):
+        return list(q.components)  # [w, x, y, z]
+    # 如果是 list 或 np.ndarray 类型，直接返回
+    elif isinstance(q, (list, np.ndarray)):
+        return list(q)
+    else:
+        raise TypeError(f"Unsupported rotation type: {type(q)}")
+     
 if __name__ == '__main__':
+
+    qwen_checker = QwenImageChecker()
+    valid_json_path = "valid_candidates.jsonl"
+    save_json = []
     parser = argparse.ArgumentParser()
     parser.add_argument('--yaml_file_path', type=str, required=True,
                         help='Path to the YAML config file')
@@ -157,9 +224,20 @@ if __name__ == '__main__':
     jump_idx = get_max_episode_number(img_output_dir)+1
     # jump_idx = 498
 
-    with open("character_descriptions_new.json", "r") as f:
-        id_dict = json.load(f)
-    name_folders = list(id_dict.keys())
+    # with open("character_descriptions_new.json", "r") as f:
+    #     id_dict = json.load(f)
+    # name_folders = list(id_dict.keys())
+    # total_viewpoints = 0
+
+    # for file_name, content in sorted(data.items()):
+    #     structured_data, filtered_episodes = process_episodes_and_goals(content)
+
+    #     # 统计当前文件的所有 viewpoint 数
+    #     for category, objects in structured_data.items():
+    #         for obj in objects:
+    #             total_viewpoints += len(obj.get("view_points", []))
+
+    # print("Total viewpoints across all files:", total_viewpoints)
 
     for file_name, content in sorted(data.items()):
         structured_data, filtered_episodes = process_episodes_and_goals(content)
@@ -173,24 +251,24 @@ if __name__ == '__main__':
         simulator = load_simulator(cfg)
         pathfinder = simulator.pathfinder
         pathfinder.seed(cfg.seed)
-        if not simulator.pathfinder.is_loaded:
-            print("Failed to load or generate navmesh.")
-            continue
+        # if not simulator.pathfinder.is_loaded:
+        #     print("Failed to load or generate navmesh.")
+        #     continue
 
         # 获取 episode 候选点
-        episodes = convert_to_scene_objnav_rotate(structured_data, filtered_episodes, pathfinder, 
-                                                  min_distance=3.0, max_distance=5.0, sample_all=False)
+        episodes = convert_to_scene_objnav_rotate(structured_data, pathfinder, sample_all=False)
 
         print("begin rotation data collection")
         for episode_idx, episode_data in enumerate(tqdm(episodes)):
             episode_id = episode_data["episode_id"]
+            episode_id_int = episode_data["episode_id_int"]
 
             if all_index < jump_idx:
                 all_index += 1
                 continue  
-            if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist_obj.jsonl"):
-                # print(f"{current_scene} :  {episode_id} in blacklist")
-                continue
+            # if is_in_blacklist(current_scene, episode_id , "scene_episode_blacklist_obj.jsonl"):
+            #     # print(f"{current_scene} :  {episode_id} in blacklist")
+            #     continue
             # reset humanoid
             try:
                 simulator.close()
@@ -198,35 +276,58 @@ if __name__ == '__main__':
                 pass
             simulator = load_simulator(cfg)
             reset_state = simulator.agents[0].get_state()
+            
             reset_state.position = np.array(episode_data.start_position)
-            # reset_state.rotation = np.array(episode_data.start_rotation)
-            reset_state.rotation = episode_data.start_rotation
+            reset_state.rotation = episode_data.goal["rotation"]
             simulator.agents[0].set_state(reset_state)
-
             obs = simulator.get_sensor_observations(0)['color_0_0']
+            # os.makedirs("/mnt/pfs/3zpd5q/code/eval/DexVLA/results_eval_obj/image", exist_ok=True)
+            # img_path = os.path.join("/mnt/pfs/3zpd5q/code/eval/DexVLA/results_eval_obj/image", f"{episode_id_int}_2.png")
+            # imageio.imwrite(img_path, obs)
             black_threshold = 0.3
             if not check_episode_validity(obs, threshold=black_threshold):
                 print("invalid black observations")
-                os.makedirs("black_obs", exist_ok=True)
-                imageio.imwrite(f'black_obs/{episode_id}.png', obs)
-                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist_obj.jsonl")
+                # os.makedirs("black_obs", exist_ok=True)
+                # imageio.imwrite(f'black_obs/{episode_id}.png', obs)
+                # add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist_obj.jsonl")
                 continue
+            is_visible = qwen_checker.check_visibility(obs, obj_name = episode_data["object_category"])
+            if not is_visible: continue
+            if is_visible:
+                json_item = {
+                    "current_scene":current_scene,
+                    "episode_id": episode_data["episode_id"],
+                    "object_environment": episode_data["object_environment"],
+                    "object_category": episode_data["object_category"],
 
+                    "start": {
+                        "position": episode_data.start_position,
+                        "rotation": quaternion_to_list(episode_data.start_rotation)
+                    },
+                    "goal": {
+                        "position": episode_data.goal["position"],
+                        "rotation": quaternion_to_list(episode_data.goal["rotation"])
+                    }
+                }
+
+                with open(valid_json_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(json_item, ensure_ascii=False) + "\n")
+             
             output_data = rotate_to_target(
                 all_index=all_index,
                 simulator=simulator,
-                target_pos=np.array(episode_data.goal["position"]),
+                episode_data=episode_data,
                 fps=10,
                 timestep_gap=1/10,
                 robot=agilex_bot,
                 angle_threshold=0.17,
-                rotation_step=np.pi/16
+                rotation_step=0.10
             )
 
             # 保存数据
             save_rotate_obj_data_to_h5(
                 output_data["obs"], output_data["trajectory"], 
-                h5_path=f"data/raw_data/obj/episode_{all_index}.hdf5", 
+                h5_path=f"data/raw_data/obj/rotate/episode_{all_index}.hdf5", 
                 episode_data = episode_data)
             if all_index < 50:
                 video_output = video_output_dir

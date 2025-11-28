@@ -386,6 +386,8 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
     count = 0
 
     with h5py.File(src_file, "r") as fin:
+        anno_grp = fin.get("annotations_status", None)
+        has_anno = anno_grp is not None
         # 读取连续轨迹 rel_path_org = [T, 8]
         rel_path_org = fin["rel_path"][()].astype(np.float32)
         T = len(rel_path_org)
@@ -434,7 +436,7 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 qposes = np.zeros_like(actions)
 
                 # 写入子 group
-                subgrp = dgrp_all.create_group(str(count))
+                subgrp = dgrp_all.create_group(str(obs_idx))
 
                 subgrp.create_dataset("obs_idx", data=obs_idx)
                 subgrp.create_dataset("observations/images", 
@@ -447,10 +449,28 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 subgrp.create_dataset("action", data=actions, compression='gzip')
                 subgrp.create_dataset("qpos", data=qposes, compression='gzip')
 
-                subgrp.create_dataset("language_raw",
-                                      data="Follow the trajectory.",
-                                      dtype=h5py.string_dtype())
+                # subgrp.create_dataset("language_raw",
+                #                       data="Follow the trajectory.",
+                #                       dtype=h5py.string_dtype())
+                if has_anno:
+                    for key in anno_grp.keys():   # 例如 status_0, status_1 ...
+                        status_arr = anno_grp[key][()]  # 取整个数组
+                        if obs_idx < len(status_arr):
+                            status_str = status_arr[obs_idx].decode("utf-8")
+                        else:
+                            status_str = "null"
 
+                        # subgrp.create_dataset(
+                        #     key, 
+                        #     data=status_str,
+                        #     dtype=h5py.string_dtype()
+                        # )
+                        subgrp.create_dataset("language_raw",
+                        data = status_str, 
+                        dtype=h5py.string_dtype())
+                if status_str == "null":
+                    del dgrp_all[str(obs_idx)]
+                
                 count += 1
                 if viz_root and True:
                     visualize_follow_path(subgrp, actions, viz_root/ep_name/f"action_{obs_idx}_{type}.png")

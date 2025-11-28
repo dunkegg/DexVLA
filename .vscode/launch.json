@@ -269,7 +269,7 @@
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_obj.yaml"
         ],
-        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
+        // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
       },
     ]
   }

@@ -3,7 +3,7 @@ import numpy as np
 import os
 from h5py import special_dtype
 
-rxr_dir = "/wangzejin/code/DexVLA/hyz_test/rxr2" # 修改为自己的文件路径
+rxr_dir = "data/raw_data/rxr_smooth" # 修改为自己的文件路径
 
 def add_instructions_to_h5(h5_path):
     print(f"\n🔧 正在处理: {h5_path}")

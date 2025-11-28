@@ -29,51 +29,77 @@ def status_begin_prompt(sub_task, main_start, main_end, horizon, historical_comm
     return begin_prompt
 
 
-def status_prompt(sub_task, main_start, main_end, horizon, historical_commands):
+def status_prompt(sub_task, main_start, main_end, horizon, historical_commands, type):
     '''
     生成mid batch 的 prompt
     '''
     window_size = main_end - main_start + 1
     hist_text = ", ".join(map(str, historical_commands)) if historical_commands else "none"
+    if type==0 :
+        mid_prompt = f"""
+            You are a robot navigating in a room. Your global instruction is: "{sub_task}".
 
-    mid_prompt = f"""
-        You are a robot navigating in a room. Your global instruction is: "{sub_task}".
+            You are provided with a sequence of images which includes:
+            - Several **context images** (previous and future frames, used ONLY for understanding temporal consistency)
+            - A **main window of {window_size} images** that MUST be labeled.
 
-        You are provided with a sequence of images which includes:
+            IMPORTANT:
+            - The model input contains context + main window.
+            - You MUST label ONLY the {window_size} images inside the main window.
+            - DO NOT generate labels for context frames.
+
+            The main window corresponds to the following global frame indices:
+            [{main_start} .. {main_end}]
+            These {window_size} images represent your current and upcoming observations.
+            Index {main_start} is the current state, and {main_start+1}..{main_end} are the future states.
+
+            Additional information:
+            - Total trajectory length = {horizon}.
+            - Historical commands: {hist_text}. Compare them with the global instruction to maintain consistency.
+
+            Your task:
+            1. **Reasoning** — Describe briefly how you interpret the robot's current progress in the task, using both context and main window frames.
+            2. **Label {window_size} states** — For each of the {window_size} main window frames, Provide a short verb-based action/state summary.
+            3. Ensure **strict temporal coherence**: the sequence of commands should reflect smooth evolution across frames.
+            4. Do NOT produce separate sentences for each image.
+
+            Please output in **strict JSON format** (NO markdown, NO extra sentences):
+            {{
+                "reasoning": "Briefly describe your reasoning progress",
+                "{main_start}-{min(main_start+4, main_end)}": "brief state summary",
+                "{main_start+5}-{main_end}": "brief state summary"
+            }}
+        """
+    else :
+        mid_prompt = f"""
+        You are a robot walking in the room. This is your global instruction: "{sub_task}". 
+
+        The images provided represent your observations along your journey:
         - Several **context images** (previous and future frames, used ONLY for understanding temporal consistency)
         - A **main window of {window_size} images** that MUST be labeled.
 
-        IMPORTANT:
-        - The model input contains context + main window.
-        - You MUST label ONLY the {window_size} images inside the main window.
-        - DO NOT generate labels for context frames.
+        Based on these images, please:
+        1. Reason: Identify where you are in the task based on the current observation (first image) and future context (following images).
+        2. Provide a conclusion: What is the current state you are in, and what will be your next step based on the global instruction.
+        3. The current observation corresponds to step {main_start}/{horizon}, and your future states correspond to steps {main_start + 1}-{main_end}/{horizon}.
+        4. Your historical commands are: {hist_text}. Compare them with the global instruction.
 
-        The main window corresponds to the following global frame indices:
-        [{main_start} .. {main_end}]
-        These {window_size} images represent your current and upcoming observations.
-        Index {main_start} is the current state, and {main_start+1}..{main_end} are the future states.
+        ✅ Also:
+        Please generate a short action command for each state:
+        - For the current state, provide a short command that summarizes current state with verbs.
+        - For the future state, provide a short command that summarizes future state with verbs.
 
-        Additional information:
-        - Total trajectory length = {horizon}.
-        - Historical commands: {hist_text}. Compare them with the global instruction to maintain consistency.
-
-        Your task:
-        1. **Reasoning** — Describe briefly how you interpret the robot's current progress in the task, using both context and main window frames.
-        2. **Label {window_size} states** — For each of the {window_size} main window frames, Provide a short verb-based action/state summary.
-        3. Ensure **strict temporal coherence**: the sequence of commands should reflect smooth evolution across frames.
-        4. Do NOT produce separate sentences for each image.
-
-        Please output in **strict JSON format** (NO markdown, NO extra sentences):
+        Please output in **strict JSON format** (no explanations, no markdown):
         {{
             "reasoning": "Briefly describe your reasoning progress",
-            "{main_start}-{min(main_start+4, main_end)}": "brief state summary",
-            "{main_start+5}-{main_end}": "brief state summary"
+            "{main_start}-{min(main_start+4, main_end)}": "Current state summary",
+            "{main_start+5}-{main_end}": "Future state summary"
         }}
     """
     return mid_prompt
 
 
-def status_end_prompt(sub_task, main_start, main_end, horizon, historical_commands):
+def status_end_prompt(sub_task, main_start, main_end, horizon, historical_commands, type):
     """
     生成end batch的prompt
     """

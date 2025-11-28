@@ -21,6 +21,11 @@ class QwenLabeler:
         openai_api_key = "EMPTY"
         openai_api_base = "http://localhost:8000/v1"
         client = OpenAI(api_key=openai_api_key, base_url=openai_api_base)
+        # client = OpenAI(
+        #     api_key="EMPTY",
+        #     base_url="http://localhost:8000/v1",
+        #     http_client=openai.OpenAIHTTPClient(proxy=None)
+        # )
         self.client = client
 
     # -------------------------------------------------------------
@@ -31,6 +36,7 @@ class QwenLabeler:
         images,
         instruction,
         window_size=10,
+        type=type,
         positions=None,
         rotations=None,
     ):
@@ -74,6 +80,7 @@ class QwenLabeler:
                     main_end=main_end,
                     horizon=num_images,
                     historical_commands=[historical_command] if historical_command else [],
+                    type = type,
                 )
                 # 生成 JSON 输出
                 json_output = self.generate_label(sub_encoded_images, prompt)

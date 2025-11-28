@@ -614,84 +614,64 @@ from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , q
 def rotate_to_target(
     all_index,
     simulator,
-    target_pos,
+    episode_data,
     fps=10,
     timestep_gap=0.2,
     robot=None,
-    angle_threshold=0.17,  # 停止旋转的夹角阈值（弧度）
-    rotation_step=0.1,     # 每步旋转角度（弧度）
+    angle_threshold=0.17,       # 停止旋转的夹角阈值（弧度）
+    rotation_step=np.pi / 16,   # 每步旋转角度（弧度）
 ):
-    """
-    控制机器人旋转到目标方向（水平面），直到夹角小于 angle_threshold
-    """
-
     if robot is not None:
         robot.set_episode_id(all_index)
 
     observations = []
     trajectory = []
 
-    # 获取初始状态
-    agent_state = simulator.agents[0].get_state()
-    agent_pos = np.array(agent_state.position, dtype=np.float64)
+    # --- 1. 统一成 qt.quaternion ---
+    quat_np_start = to_quat(episode_data.start["rotation"])
+    quat_qt_start = qt.quaternion(quat_np_start[0], quat_np_start[1], quat_np_start[2], quat_np_start[3])
+    quat_np_goal = to_quat(episode_data.goal["rotation"])
+    quat_qt_goal = qt.quaternion(quat_np_goal[0], quat_np_goal[1], quat_np_goal[2], quat_np_goal[3])
+    # --- 2. 直接使用 quat_to_angle_axis 获取 yaw ---
+    def quat_to_yaw_stable(q: qt.quaternion):
+        R = qt.as_rotation_matrix(q)
+        yaw = np.arctan2(R[0, 2], R[2, 2])
+        return yaw
+    current_yaw = quat_to_yaw_stable(quat_qt_start)
+    goal_yaw = quat_to_yaw_stable(quat_qt_goal)
 
-    # 水平面目标方向
-    vec_to_target = target_pos - agent_pos
-    vec_to_target[1] = 0  # 忽略高度
-    if np.linalg.norm(vec_to_target) < 1e-6:
-        vec_to_target = np.array([0.0, 0.0, 1.0])
-    else:
-        vec_to_target /= np.linalg.norm(vec_to_target)
+    # current_yaw, _ = quat_to_angle_axis(quat_qt_start)
+    # goal_yaw, _ = quat_to_angle_axis(quat_qt_goal)
 
-    max_steps = int(2 * np.pi / rotation_step)  # 最多旋转一圈
+    # 最大旋转步
+    max_steps = int(2 * np.pi / rotation_step)
 
     for step in range(max_steps):
-        agent_state = simulator.agents[0].get_state()
-        pos = np.array(agent_state.position, dtype=np.float64)
+        # 水平角差规范化
+        angle_diff = (goal_yaw - current_yaw + np.pi) % (2 * np.pi) - np.pi
 
-        # 获取当前 yaw
-        quat_raw = agent_state.rotation
-        quat = np.array([quat_raw.w, quat_raw.x, quat_raw.y, quat_raw.z], dtype=np.float64)
-        # current_yaw = R.from_quat(quat).as_euler('xyz')[1]
-        #
-        quat_qt = qt.quaternion(quat[0], quat[1], quat[2], quat[3])
-        current_yaw, _ = quat_to_angle_axis(quat_qt)
-
-        trajectory.append((pos, quat, current_yaw))
-
-        # ----------------- 水平面 forward_vec -----------------
-        # Habitat坐标系：X-right, Y-up, Z-forward(-Z前)
-        forward_vec = np.array([np.sin(current_yaw), -np.cos(current_yaw)])  # X-Z平面投影
-        target_vec = np.array([vec_to_target[0], vec_to_target[2]])
-        target_vec /= np.linalg.norm(target_vec)
-
-        # 计算 signed angle
-        cross = forward_vec[0]*target_vec[1] - forward_vec[1]*target_vec[0]  # Z方向垂直标量
-        dot = np.dot(forward_vec, target_vec)
-        angle = np.arctan2(cross, dot)
-        angle_diff = abs(angle)
-
-        # 判断是否到达阈值
-        if angle_diff < angle_threshold:
-            # print(f"rotate finished at step {step}, angle_diff={angle_diff:.4f}")
+        if abs(angle_diff) < angle_threshold:
             break
 
-        # 限制每步旋转不超过 rotation_step
-        delta = np.clip(angle, -rotation_step, rotation_step)
-        new_yaw = current_yaw + delta
+        # 限制每步旋转
+        delta = np.clip(angle_diff, -rotation_step, rotation_step)
+        current_yaw += delta
 
-        # 应用旋转
-        # new_quat = R.from_euler('y', new_yaw).as_quat()
-        new_quat = quat_from_angle_axis(new_yaw, np.array([0, 1, 0]))
-        agent_state.rotation = new_quat
+        # --- 3. 用 yaw 生成新的 quaternion ---
+        quat_qt_new = quat_from_angle_axis(current_yaw, np.array([0, 1, 0]))
+
+        # 更新状态
+        agent_state = simulator.agents[0].get_state()
+        agent_state.rotation = quat_qt_new
         simulator.agents[0].set_state(agent_state)
 
         # 物理步进
         simulator.step_physics(1.0 / fps)
 
-        # 采集观测
         obs = simulator.get_sensor_observations(0)
         observations.append(obs)
+        pos = np.array(agent_state.position)
+        trajectory.append((pos, quat_qt_new, current_yaw))
 
         if robot is not None:
             robot.set_obs(obs['color_0_0'], step * timestep_gap, save=True)
@@ -699,6 +679,9 @@ def rotate_to_target(
     return {
         "obs": observations,
         "trajectory": trajectory,
-        "follow_result": True,
+        "follow_result": True
     }
+
+
+
 
