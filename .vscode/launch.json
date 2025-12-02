@@ -186,7 +186,7 @@
         "name": "follow split_task",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/process_data/split_follow.py",
+        "program": "${workspaceFolder}/process_data/split_rxr.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 

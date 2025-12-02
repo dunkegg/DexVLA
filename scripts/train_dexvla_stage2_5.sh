@@ -10,7 +10,7 @@ MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 TASKNAME=nav_debug
 
 OUTPUT=OUTPUT/qwen2_dexvln_debug_no_film
-
+mkdir -p $OUTPUT
 
 deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --deepspeed scripts/zero2.json \

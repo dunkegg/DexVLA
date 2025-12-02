@@ -735,7 +735,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
     # 3) 后续统计和数据加载逻辑保持不变
     # ------------------------------------------------------------------
     dataset_path_list = [p for sub in dataset_path_list_list for p in sub] #same as flatten_list
-    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path="data/split_data/mirror_single.json")
+    norm_stats, all_episode_len = get_norm_stats(dataset_path_list, print, cache_path=config['data_args'].norm_json_path)
     rank0_print(f"{RED}All images: {sum(all_episode_len)}, Trajectories: {len(all_episode_len)}{RESET}")
 
     train_episode_len_l = [[all_episode_len[i] for i in ids] for ids in train_episode_ids_l]
@@ -757,7 +757,7 @@ def load_data(dataset_dir_l, name_filter, camera_names,
         ])
 
         stats_paths = filter_valid_hdf5(stats_paths, rank0_print)   # ← 新增
-        norm_stats, _ = get_norm_stats(stats_paths)
+        norm_stats, _ = get_norm_stats(stats_paths,print,config['data_args'].norm_json_path)
 
     # norm_stats, _ = get_norm_stats(flatten_list([find_all_hdf5(stats_dir, skip_mirrored_data, rank0_print=rank0_print) for stats_dir in stats_dir_l]))
 
