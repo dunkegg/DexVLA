@@ -25,7 +25,7 @@ def qwen_lable_images(h5_file_path, labeller):
             del f["annotations_status"]
         f.create_group("annotations_status")
         for i in range(2):
-            status_dataset_name = f"annotations_status/status_{i}"
+            status_dataset_name = f"status_{i}"
             status_annotations, all_status_reasonings = None, None
 
             need_generate_status = True
@@ -82,27 +82,27 @@ def save_annotations(h5_file, dataset_name, annotations):
     )
     print(f"💾 已保存数据集: {dataset_name} ({len(annotations)} 条)")
 
-# '''单个hdf5文件'''
-# if __name__ == "__main__":
-#     logging.basicConfig(filename="debug.log", level=logging.INFO, filemode="w")
-#     labeller = QwenLabeler()
-
-#     # 修改此路径为单个文件或目录：
-#     h5_file_path = "/wangzejin/code/DexVLA/hyz_test/rxr2/episode_8.hdf5"
-#     qwen_lable_images(h5_file_path, labeller)
-# '''整个文件夹下的hdf5文件'''
+'''单个hdf5文件'''
 if __name__ == "__main__":
     logging.basicConfig(filename="debug.log", level=logging.INFO, filemode="w")
     labeller = QwenLabeler()
 
-    rxr_dir = "data/raw_data/rxr_smooth"
-    for fname in sorted(os.listdir(rxr_dir)):
-        if fname.endswith(".hdf5"):
-            path = os.path.join(rxr_dir, fname)
-            print(f"==============================")
-            print(f"🚀 开始处理文件：{path}")
-            print(f"==============================")
-            qwen_lable_images(path, labeller)
+    # 修改此路径为单个文件或目录：
+    h5_file_path = "label_with_vlm/hyz_data/episode_8.hdf5"
+    qwen_lable_images(h5_file_path, labeller)
+# '''整个文件夹下的hdf5文件'''
+# if __name__ == "__main__":
+#     logging.basicConfig(filename="debug.log", level=logging.INFO, filemode="w")
+#     labeller = QwenLabeler()
 
-    print("\n🎉 全部 HDF5 文件标注完成！")
+#     rxr_dir = "data/raw_data/rxr_smooth"
+#     for fname in sorted(os.listdir(rxr_dir)):
+#         if fname.endswith(".hdf5"):
+#             path = os.path.join(rxr_dir, fname)
+#             print(f"==============================")
+#             print(f"🚀 开始处理文件：{path}")
+#             print(f"==============================")
+#             qwen_lable_images(path, labeller)
+
+#     print("\n🎉 全部 HDF5 文件标注完成！")
 

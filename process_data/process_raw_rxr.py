@@ -274,47 +274,52 @@ from matplotlib import cm, colors
 
 def visualize_follow_path(group: h5py.Group,
                           actions: np.ndarray,
-                        #   human_local,
                           out_png: Path,
                           cmap_name: str = "viridis"):
-    """
-    actions : (T,3)  [x, z, yaw]   —— 已经是局部坐标
-    human_local : (3,)
-    """
-    # ------ 数据准备 -----------------------------------------------------
-    traj_xz = actions[:, :2]                       # (T,2)  x,z
-    yaw_deg = np.degrees(actions[:, 2])            # (T,)   yaw°
-    steps   = np.arange(len(actions))              # 0..T-1
 
-    # 生成归一化颜色映射器
+    traj_xz = actions[:, :2]
+    yaw_deg = np.degrees(actions[:, 2])
+    steps   = np.arange(len(actions))
+
     cmap   = cm.get_cmap(cmap_name)
     norm   = colors.Normalize(vmin=0, vmax=len(actions)-1)
     colors_arr = cmap(norm(steps))
 
-    # ------ 画布 ---------------------------------------------------------
     fig, (ax_top, ax_bot) = plt.subplots(
         2, 1, figsize=(6, 8),
         gridspec_kw={"height_ratios": [2, 1]},
         sharex=False
     )
 
-    # ── 上：渐变轨迹 ───────────────────────────────────────────────
-    # 把折线拆成线段集合，用 LineCollection 着色
-    segs = np.concatenate(
-        [traj_xz[:-1, None, :], traj_xz[1:, None, :]], axis=1
-    )
+    # ── 读取 language_raw（数组）────────────────────────────
+    if "language_raw" in group:
+        # group["language_raw"][()] 返回 ndarray(shape=(N,))
+        lang_list = group["language_raw"][()]  
+        # bytes → str
+        lang_list = [x.decode("utf-8") if isinstance(x, bytes) else x
+                     for x in lang_list]
+        # 拼到一行或多行
+        language_str = "\n".join(lang_list)
+    else:
+        language_str = "(no language_raw)"
+
+    # ── 上图：轨迹 ───────────────────────────────────────
+    segs = np.concatenate([traj_xz[:-1, None, :], traj_xz[1:, None, :]], axis=1)
     lc   = LineCollection(segs, colors=colors_arr[:-1], linewidths=2)
     ax_top.add_collection(lc)
     ax_top.scatter(0, 0, c="red", marker="*", s=100, label="follow (0,0)")
-    # ax_top.scatter(human_local[0], human_local[2],
-    #                c="blue", marker="*", s=100, label="human_local")
+
     ax_top.set_aspect("equal")
     ax_top.set_xlim(-5, 5); ax_top.set_ylim(-5, 5)
-    ax_top.set_xlabel("x (m)"); ax_top.set_ylabel("z (m)")
+    ax_top.set_xlabel("x (m)")
+    ax_top.set_ylabel("z (m)")
     ax_top.legend(fontsize="small")
-    ax_top.set_title(f"obs_idx = {int(group['obs_idx'][()])}")
 
-    # ── 下：Δyaw 渐变曲线 ─────────────────────────────────────────
+    # 以前 title 是 obs_idx，现在加上 language_raw
+    obs_idx_val = int(group["obs_idx"][()])
+    ax_top.set_title(f"obs_idx = {obs_idx_val}")
+
+    # ── 下图：yaw 曲线 ───────────────────────────────────
     for i in range(len(yaw_deg)-1):
         ax_bot.plot(steps[i:i+2], yaw_deg[i:i+2],
                     color=colors_arr[i], linewidth=2)
@@ -322,14 +327,21 @@ def visualize_follow_path(group: h5py.Group,
     ax_bot.set_ylabel("Δyaw (deg)")
     ax_bot.grid(True, alpha=0.3)
 
-    # colorbar (可选)
+    # ── 在图像顶部添加文本（全宽，可换行）────────────────────
+    fig.text(
+        0.5, 0.97,
+        language_str,
+        ha="center", va="top",
+        fontsize=10,
+        wrap=True  # 自动换行
+    )
+
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=[ax_top, ax_bot], orientation="vertical",
-                        fraction=0.03, pad=0.02)
-    cbar.set_label("time step")
+    fig.colorbar(sm, ax=[ax_top, ax_bot], orientation="vertical",
+                 fraction=0.03, pad=0.02)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.93])  # 给顶部文字留空间
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=150)
     plt.close(fig)
@@ -453,26 +465,32 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 #                       data="Follow the trajectory.",
                 #                       dtype=h5py.string_dtype())
                 if has_anno:
+                    status_list = []
+                    has_null = False
+
                     for key in anno_grp.keys():   # 例如 status_0, status_1 ...
-                        status_arr = anno_grp[key][()]  # 取整个数组
+                        status_arr = anno_grp[key][()]  # 整个数组
                         if obs_idx < len(status_arr):
                             status_str = status_arr[obs_idx].decode("utf-8")
                         else:
                             status_str = "null"
 
-                        # subgrp.create_dataset(
-                        #     key, 
-                        #     data=status_str,
-                        #     dtype=h5py.string_dtype()
-                        # )
-                        subgrp.create_dataset("language_raw",
-                        data = status_str, 
-                        dtype=h5py.string_dtype())
-                if status_str == "null":
-                    del dgrp_all[str(obs_idx)]
+                        if status_str == "null":
+                            has_null = True
+
+                        status_list.append(status_str)
+
+                    # 如果存在 null → 删除 dgrp_all[str(obs_idx)] 并跳过写入
+                    if has_null:
+                        del dgrp_all[str(obs_idx)]
+                        continue
+                    else:
+                        # 写 language_raw（数组形式）
+                        dt = h5py.string_dtype(encoding='utf-8')
+                        subgrp.create_dataset("language_raw", data=status_list, dtype=dt)
                 
                 count += 1
-                if viz_root and True:
+                if viz_root and False:
                     visualize_follow_path(subgrp, actions, viz_root/ep_name/f"action_{obs_idx}_{type}.png")
 
     print(f"✓ {ep_name} -> {dst_h5} ({count} samples)")

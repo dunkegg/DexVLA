@@ -4,12 +4,14 @@ exp_name: view_sample
 
 # scenes_data_path: /mnt/pfs/3zpd5q/code/mp3d_habitat/mp3d
 # json_file_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/habitat_for_sim/RxR_10000.json
-scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
-json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
+scenes_data_path: /mnt/pfs/s7fsio/goat_bench/data/scene_datasets/hm3d/train
+json_file_path: /mnt/pfs/s7fsio/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
+# scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
+# json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 
 image_lens: 10
 
-max_episodes: 50000
+max_episodes: 500000
 multi_humanoids: true
 
 # Camera, image
