@@ -331,7 +331,12 @@ def extract_obs_and_paths(h5_file_path):
                 # rel_path = ep_group['rel_path'][()]
                 rel_path = ep_group['action'][()]
                 images = ep_group['observations/images'][()].decode('utf-8')
-                raw_lang = ep_group['language_raw'][()].decode('utf-8')
+                raw_lang = ep_group['language_raw'][()]
+                if isinstance(raw_lang, np.ndarray):
+                    raw_lang = raw_lang.tolist()
+                    raw_lang = random.choice(raw_lang)
+                
+                raw_lang = raw_lang.decode('utf-8')
                 # 保存到结果字典中
                 results[ep_key] = {
                     'obs_idx': obs_idx,
@@ -425,8 +430,8 @@ if __name__ == '__main__':
 
         n_frames = cfg.image_lens
         for ep_id, (ep_key, ep_data) in enumerate(data.items()):
-            if ep_data["obs_idx"] ==0:
-                continue
+            # if ep_data["obs_idx"] ==0:
+            #     continue
             raw_lang = ep_data["raw_lang"]
             description = raw_lang
             raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."

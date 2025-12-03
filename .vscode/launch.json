@@ -178,7 +178,7 @@
           "CUDA_VISIBLE_DEVICES": "3",       
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi_combine.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_rxr.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
