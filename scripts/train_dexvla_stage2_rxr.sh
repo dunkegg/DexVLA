@@ -11,7 +11,7 @@ DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
 MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 TASKNAME=rxr
 
-OUTPUT=OUTPUT/qwen2_rxr_sample_v1
+OUTPUT=OUTPUT/qwen2_rxr_sample_v2
 JSON_PATH=data/split_data/rxr/norm_status.json
 mkdir -p $OUTPUT
 
@@ -43,7 +43,7 @@ deepspeed --master_port 29604 --include=localhost:0,1,2,3 ./train_vla.py \
   --bf16 True \
   --output_dir $OUTPUT \
   --norm_json_path $JSON_PATH \
-  --max_steps 40000 \
+  --max_steps 20000 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \

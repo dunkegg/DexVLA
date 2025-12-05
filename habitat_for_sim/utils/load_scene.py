@@ -246,3 +246,95 @@ def generate_full_path_from_coords_with_index(coords, pathfinder, human_fps=5, h
 
     return full_path, index_map
 
+def quat_to_yaw(q):
+    x, y, z, w = q
+    siny_cosp = 2.0 * (w * y + x * z)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+
+    return np.arctan2(siny_cosp, cosy_cosp)
+
+
+def shortest_angle_diff(a, b):
+    """返回两个角的最小差值（范围：[-pi, pi]）"""
+    diff = (a - b + np.pi) % (2 * np.pi) - np.pi
+    return diff
+
+def generate_path_from_scene_for_obj(obj_data, pathfinder, min_distance = 5 ,human_fps = 5, human_speed = 0.7):
+    # 设置起始位置和旋转
+    start_position = obj_data["start"]["position"]
+    start_rotation = obj_data["goal"]["rotation"]
+    goal_position = obj_data["goal"]["position"]
+    goal_rotation = obj_data["goal"]["rotation"]
+
+    start_normal = pos_habitat_to_normal(start_position)
+    start_floor_height = start_normal[-1]
+
+    if goal_position is None or start_position is None:
+        return None
+    # 使用 ShortestPath 对象生成避免穿墙的最短路径
+    shortest_path = habitat_sim.ShortestPath()
+    shortest_path.requested_start = start_position
+    shortest_path.requested_end = goal_position
+
+    # 查找最短路径 # 模拟前沿探索过程
+    if pathfinder.find_path(shortest_path):
+        
+        # 检查起始点和目标点是否在同一楼层 (高度差小于1m)
+        start_floor_height = start_position[1]  # y 值代表高度
+        goal_floor_height = goal_position[1]
+        if abs(start_floor_height - goal_floor_height) > 1:
+            print(f"Skipping episode due to height difference: {start_floor_height} vs {goal_floor_height}")
+            return None
+        path = shortest_path.points
+
+        # path = [start_position] + path + [goal_position]
+
+        floor_heights = [point[1] for point in path]  # 获取所有路径点的高度
+        if max(floor_heights) - min(floor_heights) > 1:
+            print("Skipping episode due to multi-floor path")
+            return None
+        
+        #轨迹优化流水线
+        new_path = generate_path(path, pathfinder, filt_distance=0.1, num_points_between = 5, resolution=1024,visualize=False)
+
+    else:
+        return None 
+
+    dense_path = get_path_with_time(new_path, time_step=1/human_fps, speed=human_speed)
+    
+    if dense_path:
+        final_quat = dense_path[-1][1]
+        final_yaw  = dense_path[-1][2]
+
+        goal_yaw = quat_to_yaw(goal_rotation)
+
+        yaw_diff = abs(shortest_angle_diff(final_yaw, goal_yaw))
+
+        if yaw_diff > (np.pi / 2):    # 超过 90°
+            print(f"Skipping episode due to final yaw difference: {yaw_diff * 180/np.pi:.2f}°")
+            return None
+    
+    height_bias = 0
+    for i in range(len(dense_path)):
+        pos, quat, yaw = dense_path[i]
+        new_pos = mn.Vector3(pos.x, pos.y - height_bias, pos.z)
+        dense_path[i] = (new_pos,quat,yaw)
+    
+    # 插入高度跳变检测（连续跳变次数超过阈值才判为异常）
+    height_jump_threshold = 0.04
+    max_allowed_jumps = 5
+    jump_count = 0
+    normal_height = 0.083759
+    # for i in range(1, len(dense_path)):
+    #     curr_height = dense_path[i][0].y
+
+    #     if curr_height - normal_height > height_jump_threshold:
+    #         jump_count += 1
+    #         if jump_count >= max_allowed_jumps:
+    #             break
+
+    # if jump_count >= max_allowed_jumps:
+    #     print(f"Skipping episode due to {jump_count} large height jumps.")
+    #     return None
+    
+    return dense_path

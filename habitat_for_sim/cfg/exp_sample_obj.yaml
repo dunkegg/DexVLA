@@ -8,6 +8,7 @@ scenes_data_path: /mnt/pfs/s7fsio/goat_bench/data/scene_datasets/hm3d/train
 json_file_path: /mnt/pfs/s7fsio/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 # scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
 # json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
+move_data_path: /mnt/pfs/s7fsio/code/eval/DexVLA/valid_candidates.jsonl
 
 image_lens: 10
 

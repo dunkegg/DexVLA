@@ -499,7 +499,7 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
         quaternion = direction_to_combined_quaternion(orientation)
         
 
-        interpolated_points = [
+        interpolated_points =[
             start + (end - start) * t / (num_points_between + 1)
             for t in range(num_points_between + 2)
         ]
@@ -507,7 +507,7 @@ def generate_path(path, pathfinder, window_size=10, height_threshold=0.1, max_ro
             new_path.append((point, quaternion))
 
     if length < 1e-1 or not opt:
-        return convert_path([new_path[0],new_path[1]])
+        return convert_path([new_path[0]])
     # Step 2: 代价场优化
     agent_beginning_location = new_path[0]
     optimized_path = generate_path_with_cost_optimization(

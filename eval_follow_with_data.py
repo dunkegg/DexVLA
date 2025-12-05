@@ -316,28 +316,34 @@ def extract_obs_and_paths(h5_file_path):
         frame_paths_ds = f['frame_paths']
         frame_paths_raw = frame_paths_ds[:]  # 获取原始数据
 
-        # 判断是否需要 decode（HDF5 字符串有时是 bytes）
+        # 处理 frame_paths 解码
         if isinstance(frame_paths_raw[0], bytes):
             frame_paths = [s.decode('utf-8') for s in frame_paths_raw]
         else:
             frame_paths = frame_paths_raw.tolist()
 
         follow_paths_group = f['follow_paths']
-        for ep_key in follow_paths_group.keys():
+
+        # ⭐ 对 ep_key 自然排序
+        ep_keys = sorted(follow_paths_group.keys(), key=natural_key)
+
+        for ep_key in ep_keys:
             ep_group = follow_paths_group[ep_key]
 
             try:
                 obs_idx = ep_group['obs_idx'][()]
-                # rel_path = ep_group['rel_path'][()]
                 rel_path = ep_group['action'][()]
                 images = ep_group['observations/images'][()].decode('utf-8')
+
                 raw_lang = ep_group['language_raw'][()]
                 if isinstance(raw_lang, np.ndarray):
                     raw_lang = raw_lang.tolist()
-                    raw_lang = random.choice(raw_lang)
-                
+                    # raw_lang = random.choice(raw_lang)
+                    raw_lang = raw_lang[1]
+
                 raw_lang = raw_lang.decode('utf-8')
-                # 保存到结果字典中
+
+                # 保存
                 results[ep_key] = {
                     'obs_idx': obs_idx,
                     'target': rel_path[-1],
@@ -345,6 +351,7 @@ def extract_obs_and_paths(h5_file_path):
                     'images': images,
                     'raw_lang': raw_lang
                 }
+
             except KeyError as e:
                 print(f"[WARN] Missing key in episode {ep_key}: {e}")
 
@@ -363,6 +370,11 @@ def get_history_frames(frame_paths, idx, n_frames):
         selected = pad + selected
 
     return selected
+import re
+
+def natural_key(s):
+    return [int(text) if text.isdigit() else text.lower()
+            for text in re.split(r'(\d+)', s)]
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -408,12 +420,20 @@ if __name__ == '__main__':
     import os
 
     folder_path = cfg.proc_data_path
-    test_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+
+
+    folder_path = cfg.proc_data_path
+    test_files = sorted(
+        [os.path.join(folder_path, f)
+        for f in os.listdir(folder_path)
+        if os.path.isfile(os.path.join(folder_path, f))],
+        key=lambda x: natural_key(os.path.basename(x))
+    )
 
     os.makedirs(output_root, exist_ok=True)
     for i, file_path in enumerate(test_files):
-        if i <1000:
-            continue
+        # if i <1000:
+        #     continue
         # def print_hdf5_structure(file_path):
         #     def print_attrs(name, obj):
         #         print(name)

@@ -257,10 +257,10 @@
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },
       {
-        "name": "sample obj",
+        "name": "sample obj rotate",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/sample_obj.py",
+        "program": "${workspaceFolder}/sample_obj_rotate.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -271,6 +271,33 @@
         ],
         // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
       },
+      {
+        "name": "sample obj move",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/sample_obj_move.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        },
+        "args": [
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_obj.yaml"
+        ],
+        // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
+      },
+      {
+        "name": "process obj data",
+        "type": "python",
+        "request": "launch",
+        "program": "/mnt/pfs/s7fsio/code/eval/DexVLA/process_jsonl.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+        }
+        // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
+      }
     ]
   }
   
