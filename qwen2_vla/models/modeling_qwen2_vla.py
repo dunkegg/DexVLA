@@ -1471,6 +1471,11 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
 
         self.training_steps = 0
 
+        # from transformers import AutoTokenizer
+        # model_path = 'checkpoints/qwen2_vl'
+        # self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+        # self.tokenizer.add_special_tokens({'additional_special_tokens': ["[SOA]"]})
+
     def get_input_embeddings(self):
         return self.model.embed_tokens
 
@@ -1881,6 +1886,15 @@ class Qwen2VLForConditionalGenerationForVLA(Qwen2VLPreTrainedModel, GenerationMi
                 'action_loss': ret['loss']}
         
         if ret["reconstructed_action"] is not None:
+            # gt_ids = shift_labels.clone()
+            # gt_ids = gt_ids[gt_ids != -100]
+
+            # pred_ids = shift_logits.argmax(dim=-1)
+
+            # decoded_gt = self.tokenizer.decode(gt_ids.cpu().tolist(), skip_special_tokens=True)
+            # decoded_pred = self.tokenizer.decode(pred_ids.cpu().tolist(), skip_special_tokens=True)
+
+
             plot_actions(ret["reconstructed_action"], ret["noise_pred"].detach(), actions,  float(ret['loss'].detach().cpu()) ,ret["steps"])
 
         if not return_dict:

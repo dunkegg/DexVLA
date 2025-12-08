@@ -187,3 +187,5 @@ habitat_for_sim/habitat-lab
 habitat_for_sim/habitat-sim
 black_obs/
 test/
+sample_plot*
+valid_candidates.jsonl

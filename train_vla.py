@@ -79,6 +79,7 @@ class DataArguments:
     image_size_wrist: str = "56" # image size of wrist camera
     history_images_length: int = 1 # length of history images
     visiualize_steps: int = field(default=10)
+    norm_json_path: str = field(default="norm_stats.json")
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):

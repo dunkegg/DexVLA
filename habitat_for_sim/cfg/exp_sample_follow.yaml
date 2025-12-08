@@ -39,6 +39,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot_multi_one2
-video_output_dir: results_eval_multi_one2
+img_output_dir: eval_plot_multi_follow_smooth
+video_output_dir: results_eval_multi_follow_smooth
 log_path: logs/log_multi_easy.json

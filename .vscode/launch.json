@@ -178,7 +178,7 @@
           "CUDA_VISIBLE_DEVICES": "3",       
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_multi_combine.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_rxr.yaml"
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
@@ -186,7 +186,7 @@
         "name": "follow split_task",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/process_data/split_follow.py",
+        "program": "${workspaceFolder}/process_data/split_rxr.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 

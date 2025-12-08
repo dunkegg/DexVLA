@@ -20,7 +20,7 @@ export RANK=0  # 对于进程 0
 # python3 -m vllm.entrypoints.openai.api_server --model checkpoints/Qwen2_5VL_72B/ --served-model-name Qwen-72B --tensor-parallel-size 4 --gpu-memory-utilization 0.8
 
 python3 -m vllm.entrypoints.openai.api_server \
-    --model checkpoints/qwen3_vl/Qwen/Qwen3-VL-30B-A3B-Instruct \
+    --model checkpoints/Qwen3-VL-30B-A3B-Instruct \
     --served-model-name Qwen-30B \
     --tensor-parallel-size 2 \
     --gpu-memory-utilization 0.8

@@ -163,4 +163,4 @@ def save_rotate_obj_data_to_h5(observations, walk_path, h5_path, episode_data):
         f.create_dataset("object_environment", data=np.string_(episode_data["object_environment"]))
         f.create_dataset("object_category", data=np.string_(episode_data["object_category"]))
 
-    print(f"✅  HDF5 saved to: {h5_path}")
+    # print(f"✅  HDF5 saved to: {h5_path}")

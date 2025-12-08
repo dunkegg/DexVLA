@@ -12,7 +12,7 @@ MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
 TASKNAME=multi_follow
 
 OUTPUT=OUTPUT/multi_follow_normal
-
+mkdir -p $OUTPUT
 
 deepspeed --master_port 29604 --include=localhost:0,1 ./train_vla.py \
   --deepspeed scripts/zero2.json \

@@ -223,12 +223,12 @@ if __name__ == '__main__':
                 add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
                 continue
 
-            # reset humanoid
-            try:
-                simulator.close()
-            except:
-                pass
-            simulator = load_simulator(cfg)
+            # # reset humanoid
+            # try:
+            #     simulator.close()
+            # except:
+            #     pass
+            # simulator = load_simulator(cfg)
 
             # ###label
 
