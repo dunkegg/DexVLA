@@ -5,7 +5,7 @@
         "name": "Debug train cos",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/train_vla.py",
+        "program": "${workspaceFolder}/train_qwen2_5_vla.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -26,8 +26,8 @@
           "--image_size_stable", "(320,240)",
           "--image_size_wrist", "(320,240)",
           "--history_images_length", "5",
-          "--task_name", "nav_debug",
-          "--model_name_or_path", "checkpoints/qwen2_vl",
+          "--task_name", "debug",
+          "--model_name_or_path", "checkpoints/MiMo-Embodied-7B",
           "--version", "v0",
           "--enable_distilbert", "False",
           "--tune_mm_mlp_adapter", "True",
@@ -60,7 +60,7 @@
           "--report_to", "tensorboard",
           "--logging_dir", "OUTPUT/log"
         ],
-        "python": "/wangzejin/dexvla_env/bin/python"
+        "python": "/opt/conda/envs/qwen2_5_vla/bin/python"
       },
       {
         "name": "Debug train follow",
@@ -121,7 +121,7 @@
           "--report_to", "tensorboard",
           "--logging_dir", "OUTPUT/log"
         ],
-        "python": "/mnt/pfs/3zpd5q/dexvla_env/bin/python"
+        "python": "/opt/conda/envs/qwen2_5_vla/bin/python"
       },
       {
         "name": "label",

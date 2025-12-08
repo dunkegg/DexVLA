@@ -21,15 +21,15 @@ from transformers import AutoConfig, AutoModel, AutoProcessor
 import transformers
 import IPython
 e = IPython.embed
-from data_utils.data_collators import Qwen2VLADataCollatorForSupervisedDataset
 import torch
 local_rank = None
 from aloha_scripts.utils import *
 
 
-from qwen2_vla import QWen2VLATrainer
-from qwen2_vla import model_load_utils as ml_utils
-from qwen2_vla.utils.robot_data_processor import Qwen2VLAProcess
+from qwen2_5_vla import QWen2VLATrainer
+from qwen2_5_vla import model_load_utils as ml_utils
+from qwen2_5_vla.utils.robot_data_processor import Qwen2VLAProcess
+from data_utils.data_collators import Qwen2VLADataCollatorForSupervisedDataset
 
 
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>parameters<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 

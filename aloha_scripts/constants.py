@@ -1,45 +1,17 @@
 TASK_CONFIGS = {
-    'example_tasks': { # for local debug
+    'debug': { # for local debug
         'dataset_dir': [
-            "data/dexvla"
+            "/mnt/pfs/s7fsio/code/train/DexVLA/data/debug_data"
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist'] # replacing with your real keys in h5py formatted data
     },
-    'follow_hdf5': { # for nav
+    'objnav_hdf5': { # for obj_nav
         'dataset_dir': [
-            "data/split_data/single_follow"
+            "/mnt/pfs/s7fsio/code/zf/train_data/objnav_data"
         ],
         'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'multi_follow': { # for nav
-        'dataset_dir': [
-            "data/split_data/multi_follow"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'debug': { # for nav
-        'dataset_dir': [
-            "data/debug_data"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'real_finetue': { # for nav
-        'dataset_dir': [
-            "data/split_data/single_new"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
-    },
-    'mirror_single': { # for nav
-        'dataset_dir': [
-            "data/split_data/mirror_sum"
-        ],
-        'episode_len': 1000,  
-        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+        'camera_names': ['cam_high']
     },
 }
 

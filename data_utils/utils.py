@@ -242,7 +242,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         rank = int(os.environ.get("RANK", 0))
         for path_bytes in history_image_seq[-n_frames:]:
             img_path = path_bytes.decode('utf-8')
-            # img_path = img_path.replace("code/", f"code/train/")
+            img_path = img_path.replace("/mnt/pfs/3zpd5q/", "/mnt/pfs/s7fsio/")
             img = cv2.imread(img_path)
             if mirror:
                 img = cv2.flip(img, 1)
@@ -253,7 +253,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         # if not self.train_type:
         img_path = obs_img.decode('utf-8')
-        # img_path = img_path.replace("code/", f"code/train/")
+        img_path = img_path.replace("/mnt/pfs/3zpd5q/", "/mnt/pfs/s7fsio/")
         img = cv2.imread(img_path)
         if mirror:
             img = cv2.flip(img, 1)
