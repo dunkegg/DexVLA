@@ -1,22 +1,22 @@
 #!/bin/bash
-LLM=qwen2_vl
-LLM_MODEL_SIZE=2B
+
+LLM=mimo
+LLM_MODEL_SIZE=7B
 
 ACTION_HEAD=scale_dp_policy  #unet_diffusion_policy or scale_dp_policy
 
 DIT_PRETRAIN=checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt
-MNOP=checkpoints/qwen2_vl # official qwen2_vl weights
+MNOP=checkpoints/MiMo-Embodied-7B # official qwen2_vl weights
+TASKNAME=objnav_hdf5
 
-TASKNAME=nav_debug
-
-OUTPUT=OUTPUT/qwen2_dexvln_debug_no_film
+OUTPUT=OUTPUT/mimo_dexvln_move_and_rotate_30k_4
 mkdir -p $OUTPUT
 
-deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
+deepspeed --master_port 29605 --include=localhost:0,1,2,3 ./train_qwen2_5_vla.py \
   --deepspeed scripts/zero2.json \
-  --use_reasoning False \
+  --use_reasoning True \
   --lora_enable False \
-  --using_film False \
+  --using_film True \
   --action_dim 3 \
   --state_dim 3 \
   --flash_attn True \
@@ -26,7 +26,7 @@ deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --policy_head_size "ScaleDP_H" \
   --image_size_stable "(320,240)" \
   --image_size_wrist "(320,240)" \
-  --history_images_length 5 \
+  --history_images_length 9 \
   --task_name ${TASKNAME} \
   --model_name_or_path $MNOP \
   --version v0 \
@@ -39,11 +39,11 @@ deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --image_aspect_ratio pad \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 10000 \
+  --max_steps 30000 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 5000 \
+  --save_steps 10000 \
   --save_total_limit 50 \
   --learning_rate 2e-5 \
   --weight_decay 0. \
@@ -61,6 +61,13 @@ deepspeed --master_port 29604 --include=localhost:1,2,3,4 ./train_vla.py \
   --report_to tensorboard \
   --logging_dir $OUTPUT/log | tee $OUTPUT/log.log
 
+
+status=${PIPESTATUS[0]}  # deepspeed 的退出码
+
+if [ $status -ne 0 ]; then
+    echo "❌ Deepspeed 崩了，退出码：$status"
+    exit $status
+fi
 for dir in "$OUTPUT"/*/ ; do
     if [[ "$(basename "$dir")" == *"checkpoint"* ]]; then
         cp ${MNOP}/preprocessor_config.json $dir
