@@ -393,29 +393,41 @@ def convert_path(raw_path):
     raw_path: [(pos_list, quat_wxyz), ...]
       pos_list -> [x,y,z]  or np.ndarray
       quat_wxyz -> [w,x,y,z] list / np.ndarray
-    返回: [(mn.Vector3, float_yaw)]
+
+    返回: [(mn.Vector3, Magnum.Quaternion, float_yaw)]
+    NaN 数据会自动跳过
     """
     out = []
+
     for pos_raw, quat_raw in raw_path:
-        # 1) 位置
-        pos_vec = mn.Vector3(pos_raw)
-        # pos_vec.y += 1
-        # 2) 四元数 → Magnum.Quaternion
+
+        pos_raw = np.asarray(pos_raw, dtype=float)
         quat_raw = np.asarray(quat_raw, dtype=float)
+
+        # --- NaN 检测 ---
+        if np.isnan(pos_raw).any() or np.isnan(quat_raw).any():
+            # print("⚠️ 跳过含 NaN 的路径点")
+            continue
+
+        # --- 1) 位置 ---
+        pos_vec = mn.Vector3(pos_raw)
+
+        # --- 2) 四元数 ---
         if quat_raw.shape != (4,):
             raise ValueError("四元数必须是长度 4 的 [w,x,y,z]")
+
         quat = mn.Quaternion(
             mn.Vector3(quat_raw[1], quat_raw[2], quat_raw[3]),
             quat_raw[0],
         )
+
         quat_qt = qt.quaternion(quat_raw[0], quat_raw[1], quat_raw[2], quat_raw[3])
         yaw, _ = quat_to_angle_axis(quat_qt)
-        
-        # # 3) 取 yaw
-        # yaw = quaternion_to_yaw(quat)
-        # qt.quaternion(w, quat_raw[1], y, z)     
-        out.append((pos_vec,quat,yaw))
+
+        out.append((pos_vec, quat, yaw))
+
     return out
+
 
 def resample_path_xyz(path, num_points=30):
     path = np.array(path)  # shape (T, 3)

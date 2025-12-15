@@ -10,7 +10,7 @@ import h5py
 import cv2
 from evaluate.visualize_action import plot_actions, plot_obs
 from habitat_for_sim.utils.goat import read_yaml
-
+from evaluate.visualize_action import visualize_trajectory
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
     tmp = (tmp - stats[key + '_mean']) / stats[key + '_std']
@@ -61,78 +61,6 @@ def smooth_yaw(actions, window_size=3):
 
 import cv2
 import numpy as np
-
-def visualize_trajectory(cv_image, all_actions, instruction=""):
-    if cv_image is None or all_actions is None:
-        return
-
-    # ============================================================
-    # 1) 先把图片 resize 到 (960, 720)
-    # ============================================================
-    target_w, target_h = 960, 720
-    img = cv2.resize(cv_image, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
-
-    h, w, _ = img.shape
-    center_x, center_y = w // 2, h - 1
-
-    # ============================================================
-    # 2) 字幕绘制 —— 右上角，宽度一半，高度 1/3
-    # ============================================================
-    subtitle_w = w // 3        # 黑背景宽度：右半部分
-    subtitle_h = h // 7        # 高度占整图高度的 1/3
-
-    overlay = img.copy()
-
-    # 黑底区域（右上角）
-    cv2.rectangle(
-        overlay,
-        (0, 0),     # 右上角
-        (w, subtitle_h),         # 右上角向下
-        (0, 0, 0),
-        -1
-    )
-
-    # 半透明融合
-    img = cv2.addWeighted(overlay, 0.55, img, 0.45, 0)
-
-    # ============================================================
-    # 3) 字幕文本 —— 右对齐，两行
-    # ============================================================
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = max(0.6, subtitle_h / 350)
-    thickness = max(1, int(font_scale * 2))
-
-    # 将指令分两行
-    half = len(instruction) // 2
-    line1 = instruction[:half]
-    line2 = instruction[half:]
-
-    def draw_right_text(img, text, y):
-        text_size, _ = cv2.getTextSize(text, font, font_scale, thickness)
-        text_x = w - text_size[0] - 15  # 右对齐（右边留 15px）
-        cv2.putText(img, text, (15, y), font, font_scale,
-                    (255, 255, 255), thickness, cv2.LINE_AA)
-
-    draw_right_text(img, instruction, int(subtitle_h * 0.5))
-    # draw_right_text(img, line2, int(subtitle_h * 0.66))
-
-    # ============================================================
-    # 4) 绘制轨迹
-    # ============================================================
-    scale = 70.0
-
-    overlay = img.copy()
-    for i in range(len(all_actions) - 1):
-        x1, y1 = all_actions[i, :2]
-        x2, y2 = all_actions[i + 1, :2]
-        p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
-        p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
-        cv2.line(overlay, p1, p2, (255, 80, 0), 3, lineType=cv2.LINE_AA)
-
-    img = cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
-
-    return img
-
 
 
 class qwen2_vla_policy:
@@ -332,22 +260,22 @@ def extract_obs_and_paths(h5_file_path):
 
             try:
                 obs_idx = ep_group['obs_idx'][()]
-                rel_path = ep_group['action'][()]
+                # rel_path = ep_group['action'][()]
                 images = ep_group['observations/images'][()].decode('utf-8')
 
                 raw_lang = ep_group['language_raw'][()]
                 if isinstance(raw_lang, np.ndarray):
                     raw_lang = raw_lang.tolist()
                     # raw_lang = random.choice(raw_lang)
-                    raw_lang = raw_lang[1]
+                    raw_lang = raw_lang[0]
 
                 raw_lang = raw_lang.decode('utf-8')
 
                 # 保存
                 results[ep_key] = {
                     'obs_idx': obs_idx,
-                    'target': rel_path[-1],
-                    'action': rel_path,
+                    # 'target': rel_path[-1],
+                    # 'action': rel_path,
                     'images': images,
                     'raw_lang': raw_lang
                 }
@@ -423,13 +351,13 @@ if __name__ == '__main__':
 
 
     folder_path = cfg.proc_data_path
-    test_files = sorted(
-        [os.path.join(folder_path, f)
-        for f in os.listdir(folder_path)
-        if os.path.isfile(os.path.join(folder_path, f))],
-        key=lambda x: natural_key(os.path.basename(x))
-    )
-
+    # test_files = sorted(
+    #     [os.path.join(folder_path, f)
+    #     for f in os.listdir(folder_path)
+    #     if os.path.isfile(os.path.join(folder_path, f))],
+    #     key=lambda x: natural_key(os.path.basename(x))
+    # )
+    test_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
     os.makedirs(output_root, exist_ok=True)
     for i, file_path in enumerate(test_files):
         # if i <1000:
@@ -469,7 +397,8 @@ if __name__ == '__main__':
                 img = cv2.resize(img,  eval("(320,240)"))
                 images.append(img)
 
-            target = [ep_data["target"][0], ep_data["target"][1], ep_data["target"][2]]
+            # target = [ep_data["target"][0], ep_data["target"][1], ep_data["target"][2]]
+            target = None
             agilex_bot.set_obs(images, np.array([0,0,0]))
             # agilex_bot.set_info(actions, language_raw)
             result_image = eval_bc(i,policy, target = None, surpervised_action= None, deploy_env= agilex_bot,policy_config= policy_config, raw_lang=raw_lang,description=description ,query_frequency=query_frequency)

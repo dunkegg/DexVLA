@@ -495,7 +495,7 @@ def walk_along_path_multi(
             if now - last_plan_time >= 1/plan_fps and now > 3:
                 last_plan_time = now
                 robot.eval_bc(now, position)
-                robot.save_obs(now, position)
+                # robot.save_obs(now, position)
                 # robot.compare_step(follow_size, max_move_dis)
 
             robot.ctrl_step(now, position)

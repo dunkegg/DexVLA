@@ -209,71 +209,119 @@ from PIL import Image
 import math
 
 
+def visualize_trajectory(cv_image, all_actions, instruction=""):
+    if cv_image is None or all_actions is None:
+        return
+
+    # ============================================================
+    # 1) 先把图片 resize 到 (960, 720)
+    # ============================================================
+    target_w, target_h = 960, 720
+    img = cv2.resize(cv_image, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+
+    h, w, _ = img.shape
+    center_x, center_y = w // 2, h - 1
+
+    # ============================================================
+    # 2) 字幕绘制 —— 右上角，宽度一半，高度 1/3
+    # ============================================================
+    subtitle_w = w // 3        # 黑背景宽度：右半部分
+    subtitle_h = h // 7        # 高度占整图高度的 1/3
+
+    overlay = img.copy()
+
+    # 黑底区域（右上角）
+    cv2.rectangle(
+        overlay,
+        (0, 0),     # 右上角
+        (w, subtitle_h),         # 右上角向下
+        (0, 0, 0),
+        -1
+    )
+
+    # 半透明融合
+    img = cv2.addWeighted(overlay, 0.55, img, 0.45, 0)
+
+    # ============================================================
+    # 3) 字幕文本 —— 右对齐，两行
+    # ============================================================
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.6, subtitle_h / 350)
+    thickness = max(1, int(font_scale * 2))
+
+    # 将指令分两行
+    half = len(instruction) // 2
+    line1 = instruction[:half]
+    line2 = instruction[half:]
+
+    def draw_right_text(img, text, y):
+        text_size, _ = cv2.getTextSize(text, font, font_scale, thickness)
+        text_x = w - text_size[0] - 15  # 右对齐（右边留 15px）
+        cv2.putText(img, text, (15, y), font, font_scale,
+                    (255, 255, 255), thickness, cv2.LINE_AA)
+
+    draw_right_text(img, instruction, int(subtitle_h * 0.5))
+    # draw_right_text(img, line2, int(subtitle_h * 0.66))
+
+    # ============================================================
+    # 4) 绘制轨迹
+    # ============================================================
+    scale = 70.0
+
+    overlay = img.copy()
+    for i in range(len(all_actions) - 1):
+        x1, y1 = all_actions[i, :2]
+        x2, y2 = all_actions[i + 1, :2]
+        p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
+        p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
+        cv2.line(overlay, p1, p2, (255, 80, 0), 3, lineType=cv2.LINE_AA)
+
+    img = cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
+
+    return img
 
 
-def plot_ctrl(now_time, world_actions, pid_pos, agent_pos, followed_pos, origin_pos,cur_image):
+
+
+def plot_ctrl(now_time,future_local, world_actions, cmd_pos, human_pos, cur_image, stop):
     """
     Args:
-        now_time: 当前时间
-        world_actions: (30,4) array, 每个是 [x, height, y, yaw]
-        pid_pos: [x, y, yaw] 当前 PID 输出目标
-        agent_pos: [x, y, yaw] 当前机器人实际位置
-        followed_pos: [x, y] 被跟随的位置
+        now_time: float，当前时间
+        world_actions: list of (pos, quat, yaw)
+                       pos = [x,y,z]
+        cmd_pos: [x, y, z]
+        human_pos: [x, y, z]
         cur_image: numpy图像 (H,W,3)
-    Returns:
-        numpy array (合并后的图)
     """
-    yaw_bias = math.pi / 2
+    # future_local = np.delete(future_local, 1, axis=1)
+    img_with_local = visualize_trajectory(np.array(cur_image) , future_local)
 
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
-    # --- 左边放原图 ---
-    axs[0].imshow(cur_image)
+    # -------------------- 左边：原图 --------------------
+    axs[0].imshow(img_with_local)
     axs[0].axis('off')
     axs[0].set_title(f"Camera View t={now_time:.1f}s")
 
-    # --- 右边画轨迹 ---
-    # 以 agent_pos 为原点
-    traj_x = world_actions[:, 0] - origin_pos[0]
-    traj_y = world_actions[:, 2] - origin_pos[1]
-    axs[1].plot(traj_x, -traj_y, 'b-', label="Planned Path")
-    # axs[1].scatter(traj_x[0], -traj_y[0], c='blue', marker='o', label="Start")
+    # -------------------- 右边：轨迹图 --------------------
 
-    # 当前机器人位置
-    axs[1].scatter(0, 0, c='black', s=50, label="Origin")
-    # 朝向箭头
-    arrow_len = 0.3
+    ax = axs[1]
+    if not stop:
+        # world_actions 里的轨迹（只取 pos.x / pos.z）
+        traj = np.array([np.array([p[0].x, p[0].z]) for p in world_actions])
+        ax.plot(traj[:, 0], traj[:, 1], '-o', markersize=3, label="Trajectory (pos.xz)")
 
-    agent_dx = agent_pos[0] - origin_pos[0]
-    agent_dy = agent_pos[1] - origin_pos[1]
-    axs[1].scatter(agent_dx, -agent_dy, c='green', s=30, label="Agent")
-    axs[1].arrow(agent_dx, -agent_dy,
-                 arrow_len * np.cos(agent_pos[2]+yaw_bias),
-                 arrow_len * np.sin(agent_pos[2]+yaw_bias),
-                 head_width=0.1, head_length=0.1, fc='green', ec='green')
+        # 当前 cmd_pos
+        ax.scatter(cmd_pos[0], cmd_pos[2], s=80, c='red', label="cmd_pos")
 
-    # PID 目标位置 + 朝向
-    pid_dx = pid_pos[0] - origin_pos[0]
-    pid_dy = pid_pos[1] - origin_pos[1]
-    axs[1].scatter(pid_dx, -pid_dy, c='orange', s=30, label="PID Target")
-    axs[1].arrow(pid_dx, -pid_dy,
-                 arrow_len * np.cos(pid_pos[2]+yaw_bias),
-                 arrow_len * np.sin(pid_pos[2]+yaw_bias),
-                 head_width=0.1, head_length=0.1, fc='orange', ec='orange')
-    axs[1].arrow(pid_dx, -pid_dy,
-                 arrow_len * np.cos(-pid_pos[2]+yaw_bias),
-                 arrow_len * np.sin(-pid_pos[2]+yaw_bias),
-                 head_width=0.1, head_length=0.1, fc='black', ec='black')
-    # 跟随点
-    follow_dx = followed_pos[0] - origin_pos[0]
-    follow_dy = followed_pos[1] - origin_pos[1]
-    axs[1].scatter(follow_dx, -follow_dy, c='red', s=50, label="Followed Pos")
+    # 当前 human_pos
+    ax.scatter(human_pos[0], human_pos[2], s=80, c='blue', label="human_pos")
 
-    axs[1].axis('equal')
-    axs[1].set_xlabel("X (m)")
-    axs[1].set_ylabel("Y (m)")
-    axs[1].legend()
-    axs[1].set_title("Control Visualization (Top-down)")
+    ax.set_title("World X–Z Trajectory")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
+    ax.legend()
+    ax.grid(True)
 
     # 把图转成 numpy
     fig.tight_layout()

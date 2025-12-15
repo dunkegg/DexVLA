@@ -20,29 +20,7 @@ from aloha_scripts.utils import *
 import json
 
 import multiprocessing
-def _zarr_open_worker(path, queue):
-    try:
-        arr = zarr.open(path, mode='r')
-        queue.put(arr)
-    except Exception as e:
-        queue.put(e)
 
-def safe_zarr_open(path, timeout=5):
-    ctx = multiprocessing.get_context("spawn")  # 更安全地避免多线程死锁
-    queue = ctx.Queue()
-    p = ctx.Process(target=_zarr_open_worker, args=(path, queue))
-    p.start()
-    p.join(timeout)
-
-    if p.is_alive():
-        p.terminate()
-        p.join()
-        raise TimeoutError(f"Timeout opening Zarr file: {path}")
-
-    result = queue.get()
-    if isinstance(result, Exception):
-        raise result
-    return result
 def flatten_list(l):
     return [item for sublist in l for item in sublist]
 
@@ -154,19 +132,9 @@ class EpisodicDataset(torch.utils.data.Dataset):
         return episode_id, start_ts
 
     def _load_from_nav(self, dataset_path, start_ts=0):
-        is_zarr = dataset_path.endswith(".zarr")
-        raw_lang = ""
-        reasoning = " "
 
-        if is_zarr:
-            # root = zarr.open(dataset_path, 'r')
-            root = safe_zarr_open(dataset_path)
-            get_attr = lambda k, default=None: root.attrs.get(k, default)
-            get_item = lambda k: root[k][()]
-            get_at = lambda k, i: root[k][i]
-        else:
-            with h5py.File(dataset_path, 'r') as root:
-                return self._load_from_h5_internal(root, dataset_path, start_ts)
+        with h5py.File(dataset_path, 'r') as root:
+            return self._load_from_h5_internal(root, dataset_path, start_ts)
 
 
     def _load_from_h5_internal(self,root, dataset_path, start_ts):
@@ -487,11 +455,6 @@ def get_norm_stats(dataset_path_list, rank0_print=print,  cache_path="norm_stats
                 with h5py.File(dataset_path, 'r') as root:
                     qpos = root['/observations/qpos'][()]
                     action = root['/action'][()]
-            elif dataset_path.endswith(".zarr"):
-                # root = zarr.open(dataset_path, mode='r')
-                root = safe_zarr_open(dataset_path)
-                qpos = root['/observations/qpos'][:]
-                action = root['/action'][:]
             else:
                 raise ValueError(f"Unsupported dataset format: {dataset_path}")
         except Exception as e:
@@ -612,19 +575,12 @@ def find_all_hdf5(dataset_dir, skip_mirrored_data, rank0_print=print):
                 continue
             dataset_paths.append(os.path.join(root, filename))
 
-        # Zarr 目录匹配
-        for dirname in dirs:
-            if not dirname.endswith(".zarr"):
-                continue
-            if skip_mirrored_data and 'mirror' in dirname:
-                continue
-            dataset_paths.append(os.path.join(root, dirname))
 
     if len(dataset_paths) == 0:
         rank0_print(f"{RED} Found 0 datasets in {dataset_dir} {RESET}")
         exit(0)
 
-    rank0_print(f'Found {len(dataset_paths)} dataset files (hdf5/zarr)')
+    rank0_print(f'Found {len(dataset_paths)} dataset files (hdf5)')
     return dataset_paths
 
 def BatchSampler(batch_size, episode_len_l, sample_weights):
@@ -648,12 +604,6 @@ def filter_valid_hdf5(dataset_path_list, rank0_print=print):
                         raise ValueError("Missing /action key")
                     _ = f['/action'][()]  # 检查能否读取
 
-            elif path.endswith(".zarr"):
-                # root = zarr.open(path, mode='r')
-                root = safe_zarr_open(path)
-                if '/action' not in root:
-                    raise ValueError("Missing /action key")
-                _ = root['/action'][()]  # 检查能否读取
 
             else:
                 raise ValueError(f"Unsupported dataset format: {path}")

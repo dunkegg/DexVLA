@@ -1,14 +1,14 @@
 import os
 import pickle
 from torchvision import transforms
-from habitat_for_sim.agent.path_generator import direction_to_combined_quaternion
+from habitat_for_sim.agent.path_generator import direction_to_combined_quaternion, convert_path
 from habitat_for_sim.sim.habitat_utils import local2world,habitat_quat_to_magnum ,to_vec3, to_quat, shortest_angle_diff, load_humanoid
 from process_data.process_raw_follow import world2local_target
 from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis 
 from data_utils.utils import set_seed
 import torch
 import numpy as np
-from evaluate.visualize_action import plot_actions, plot_obs, plot_ctrl
+from evaluate.visualize_action import plot_actions, plot_obs, plot_ctrl,visualize_trajectory
 from collections import deque
 import imageio
 from PIL import Image
@@ -68,33 +68,32 @@ def adjust_yaw_sign(follow_world_actions, w_yaw, pos_cur, pos_goal, check_k=3):
         follow_world_actions[:, 2] = -yaws
         return follow_world_actions
 
-def compute_yaw_from_xy(path_xyyaw, cur_yaw):
-    xy = path_xyyaw[:, :2]  # 取 x, y
-    yaw_list = []
-    for i in range(len(xy)):
-        if i < len(xy) - 1:
-            dx = xy[i+1, 0] - xy[i, 0]
-            dy = xy[i+1, 1] - xy[i, 1]
+def compute_quat_yaw_from_path(path_xyyaw, cur_yaw):
+    xyz = path_xyyaw[:, :3]  # 取 x, y ,z
+    path_list = []
+    for i in range(len(xyz)):
+
+        if i < len(xyz) - 1:
+            start = np.array(xyz[i])
+            end = np.array(xyz[i + 1])
+            # dx = xyz[i+1, 0] - xyz[i, 0]
+            # dy = xyz[i+1, 1] - xyz[i, 1]
         else:  # 最后一个点用前一个点的方向
-            dx = xy[i, 0] - xy[i-1, 0]
-            dy = xy[i, 1] - xy[i-1, 1]
-        
-        seg_vec = mn.Vector3(dx, 0, dy)
-        direction = seg_vec.normalized()
+            start = np.array(xyz[i-1])
+            end = np.array(xyz[i])
+            # dx = xyz[i, 0] - xyz[i-1, 0]
+            # dy = xyz[i, 1] - xyz[i-1, 1]
+
+        direction = end - start
         orientation = direction / np.linalg.norm(direction) 
         q_array = direction_to_combined_quaternion(orientation)
-        # quat = qt.quaternion(q_array[0],q_array[1], q_array[2], q_array[3])
-        quat = qt.quaternion(q_array[3],q_array[0], q_array[1], q_array[2])
-        yaw, _ = quat_to_angle_axis(quat) 
-        # yaw += math.pi/2
-        # yaw = np.arctan2(dy, dx)  # -pi ~ pi
-        yaw_list.append(yaw)
+        path_list.append((xyz[i], q_array))
 
-    yaw_diff = yaw_list[0] + cur_yaw
-    yaw_array = np.array(yaw_list)
-    yaw_array = yaw_array - yaw_diff
 
-    return np.hstack([xy, yaw_array[:, None]])  # 拼回 [x, y, yaw]
+    path_list = convert_path(path_list)
+
+
+    return path_list
 
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
@@ -292,6 +291,8 @@ class FakeRobotEnv():
 
         self.follower = None
         self.type = 1
+        self.stop = True
+        self.w_pos = None
     # def step(self, action):
     #     print("Execute action successfully!!!")
 
@@ -311,6 +312,7 @@ class FakeRobotEnv():
         self.step_actions = []
         self.step_idx = 0
 
+        self.w_pos = None
         # self.plot_dir = self.plot_dir + f"{n_frames}"
 
         self.raw_lang ="follow the human"
@@ -522,34 +524,33 @@ class FakeRobotEnv():
             self.step_idx = i
 
 
-    def ctrl_step(self, now_time, followed_position):
+    def ctrl_step(self, now_time, human_position):
         if not self.follower or len(self.world_actions)==0:
             return
         
-        agent_pos = [self.w_x,self.w_y,self.w_yaw]
-        x_cmd, y_cmd, yaw_cmd, idx = self.follower.step(now_time, self.w_x, self.w_y, self.w_yaw)
-        # yaw_cmd = -yaw_cmd
-        yaw_cmd = adjust_yaw_sign2(self.world_actions, yaw_cmd)
+        # agent_pos = [self.w_x,self.w_y,self.w_yaw]
+        global_target, future_local = self.follower.step(now_time)
+        pos, quat, yaw = global_target
 
-        pid_pos = [x_cmd, y_cmd, yaw_cmd]
-        followed_pos = [followed_position.x,followed_position.z]
+        # yaw_cmd = -yaw_cmd
+        # yaw_cmd = adjust_yaw_sign2(self.world_actions, yaw_cmd)
+
+
+        human_pos = [human_position.x,human_position.y,human_position.z]
         assert len(self.history_obs)>0
         cur_image = self.history_obs[-1]
-        ctrl_img_np = plot_ctrl(now_time, self.world_actions, pid_pos, agent_pos, followed_pos, self.origin_pos,cur_image)
+
+        ctrl_img_np = plot_ctrl(now_time, future_local ,self.world_actions, cmd_pos=pos,human_pos= human_pos,cur_image=cur_image, stop = self.stop)
         plot_dir = os.path.join(self.plot_dir, f"episode_{self.episode_id}","PID")
         os.makedirs(plot_dir, exist_ok=True)
         imageio.imwrite(f'{plot_dir}/{round(now_time, 1)}.png', ctrl_img_np)
-        print(f"now time: {now_time}, yaw cmd: {yaw_cmd},  traj yaw: {self.world_actions[idx][3]}, idx:{idx},  cur_yaw: {self.w_yaw }")
-        print(f"whole traj: {self.world_actions[:,3] }")
+        # print(f"now time: {now_time}, yaw cmd: {yaw_cmd},  traj yaw: {self.world_actions[idx][3]}, idx:{idx},  cur_yaw: {self.w_yaw }")
+        # print(f"whole traj: {self.world_actions[:,3] }")
         print("--------------------------------------------------------")
+        if self.stop:
+            return
 
-
-        self.w_x = x_cmd
-        self.w_y = y_cmd
-        self.w_yaw = yaw_cmd
-        pos = to_vec3([self.w_x, self.w_height, self.w_y])
-        quat = quat_from_angle_axis(self.w_yaw , np.array([0, 1, 0]))
-        self.set_state(pos, quat)
+        self.set_state(pos, to_quat(quat))
         
 
     def eval_bc(self, now_time, followed_position):
@@ -629,44 +630,40 @@ class FakeRobotEnv():
 
             local_actions = smooth_yaw(local_actions, self.smooth_window_size)
 
-            local_actions = np.insert(local_actions, 1, 0, axis=1)
+            local_actions_height = np.insert(local_actions, 1, 0, axis=1)
             
-            raw_yaw_world_actions = local2world(local_actions, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),self.w_yaw, type=self.type)
-            
-            raw_yaw_world_actions = np.delete(raw_yaw_world_actions, 1, axis=1)
-            world_actions = compute_yaw_from_xy(raw_yaw_world_actions, self.w_yaw)
-            world_actions = np.insert(world_actions, 1, 0, axis=1)
-            self.world_actions = world_actions
+            raw_yaw_world_actions = local2world(local_actions_height, np.array([cur_position[0], cur_position[1], cur_position[2]]), habitat_quat_to_magnum(cur_quat),self.w_yaw, type=0) 
+            # raw_yaw_world_actions = np.delete(raw_yaw_world_actions, 1, axis=1)
+
+            world_actions = compute_quat_yaw_from_path(raw_yaw_world_actions, self.w_yaw)
 
             # total_time = path_length / v_des
             
+             
+            if len(world_actions) ==0 :
+                self.stop = True
+                return
 
-            habitat_actions = []
-            for i in range(len(world_actions)):
-                pos = to_vec3([world_actions[i][0],world_actions[i][1],world_actions[i][2]])
-                quat = quat_from_angle_axis(world_actions[i][3], np.array([0, 1, 0]))
-                habitat_actions.append([pos, quat])
-
-            first_point = to_vec3([world_actions[0][0],world_actions[0][1],world_actions[0][2]])
-            last_point = to_vec3([world_actions[-1][0],world_actions[-1][1],world_actions[-1][2]])
+            # first_point = to_vec3([world_actions[0][0],world_actions[0][1],world_actions[0][2]])
+            # last_point = to_vec3([world_actions[-1][0],world_actions[-1][1],world_actions[-1][2]])
+            first_point = world_actions[0][0]
+            last_point = world_actions[-1][0]
             seg_vec = last_point - first_point
             seg_len = seg_vec.length()
             if seg_len <0.1:
-                follow_world_actions = [[self.w_x, self.w_y, self.w_yaw]]
+                self.stop = True
             else:
-                follow_world_actions = np.delete(world_actions, 1, axis=1)
+                self.stop = False
                 # follow_world_actions = adjust_yaw_sign(follow_world_actions, self.w_yaw, [self.w_x, self.w_y],  [followed_position.x,followed_position.z])
 
-            self.follower = TrajectoryFollower(follow_world_actions, total_time=0.75, 
-                                               kp_xy=1.0, ki_xy=0.0, kd_xy=0.0,
-                                               kp_yaw=0.5, ki_yaw=0.0, kd_yaw=0.0)
+            self.follower = TrajectoryFollower(world_actions,local_actions, total_time=0.75)
             
             self.follower.reset(now_time)
-            self.world_actions = np.insert(follow_world_actions, 1, self.height, axis=1)
+            self.world_actions = world_actions
             
 
             self.action_queue.extend(
-                    habitat_actions[0:self.query_frequency])
+                    world_actions[0:self.query_frequency])
 
 
             ####################################################################################

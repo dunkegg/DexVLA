@@ -354,7 +354,26 @@ def check_episode_validity(obs_ds, max_check_frames=3, threshold: float = 0.2):
             return False  # 当前帧是大面积黑图
     return True
 
+def smooth_yaw(actions, window_size=3):
+    if len(actions) < window_size:
+        return actions
+    
+    yaw_actions = []
+    for action in actions:
+        yaw_actions.append((action[:2], action[2]))
+    
+    smoothed_actions = []
+    for i in range(len(yaw_actions)):
+        start = max(0, i - window_size // 2)
+        end = min(len(yaw_actions), i + window_size // 2 + 1)
+        window = yaw_actions[start:end]
 
+        avg_pos = sum([a[0] for a in window]) / len(window)
+        avg_yaw = sum([a[1] for a in window]) / len(window)
+        smoothed_actions.append((avg_pos, avg_yaw))
+    
+    final = np.array([np.array([pos[0], pos[1], yaw]) for pos, yaw in smoothed_actions])
+    return final
 
 def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Path|None, hist: int):
     ep_name = src_file.stem              # episode_000 etc.
@@ -413,9 +432,11 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 follow_yaw  = s["follow_yaw"][()]
                 raw_path[:,0]-=fx; raw_path[:,1]-=fy; raw_path[:,2]-=fz
                 reletive_path, huamn_local  = world2local(raw_path,human_pos, follow_quat, follow_yaw,type)
+                
                 # reletive_path, huamn_local  = world2local_yawXZ(raw_path,human_pos, follow_yaw)
                 d.create_dataset("rel_path",data=reletive_path)
                 actions = interpolate_rel_path(reletive_path, 30, 3.0)
+                actions = smooth_yaw(actions,5)
                 d.create_dataset('language_raw', data=instruction)
                 d.create_dataset('action', data=actions, compression='gzip')
                 qposes = np.zeros_like(actions)
@@ -450,7 +471,7 @@ if __name__=="__main__":
 
     args.src_dir = "data/raw_data/multi_follow_clear"
     args.frames_dir ="data/frames/multi_follow_clear"
-    args.dst_dir = "data/proc_data/multi_follow_clear"
+    args.dst_dir = "data/proc_data/multi_follow_clear_smooth"
 
     args.viz = "results/multi_follow"
     args.history = 10
