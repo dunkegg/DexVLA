@@ -31,7 +31,7 @@ from habitat_for_sim.utils.explore.explore_habitat import (
 )
 from evaluate_dexvln.robot import FakeRobotEnv, qwen2_vla_policy
 from evaluate_dexvln.record import create_log_json, append_log
-
+from pathlib import Path
 
 # def make_key(scene: str, idx: int) -> str:
 #     return f"{scene}_{idx}"

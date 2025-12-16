@@ -1,129 +1,108 @@
 import json
 import re
 
-def status_begin_prompt(sub_task, main_start, main_end, horizon, historical_commands):
-    '''
-    生成begin batch 的 prompt
-    '''
-    begin_prompt = f"""
-        You are a robot starting a new visual navigation task. 
-        This is your global instruction: "{sub_task}".
 
-        You are given 15 sequential images:
-        - The first 10 images represent the range you must describe.
-        - The last 5 images serve only as future context to help you reason about continuity and direction.
-
-        Based on these images, please:
-        1. Reason: Identify your starting location and overall direction of movement based on the initial 15 images.
-        2. Provide a conclusion: Describe the current state and what direction the upcoming batch of images is heading toward.
-
-        You only need to generate status summaries for the first **10** states (images 0-9). 
-        Do NOT generate any status for the last 5 context images.
-
-        Please output in **strict JSON format** (no explanations, no markdown):
-        {{
-            "reasoning": "Brief reasoning about your start location and movement direction",
-            "0-9": "Summary of the first 10 states using concise action verbs"
-        }}
+def status_prompt(main_start, main_end, actions, global_offset):
     """
-    return begin_prompt
-
-
-def status_prompt(sub_task, main_start, main_end, horizon, historical_commands, type):
-    '''
-    生成mid batch 的 prompt
-    '''
+    生成带有动作参考的 mid-batch 状态推断 prompt
+    """
     window_size = main_end - main_start + 1
-    hist_text = ", ".join(map(str, historical_commands)) if historical_commands else "none"
-    if type==0 :
-        mid_prompt = f"""
-            You are a robot navigating in a room. Your global instruction is: "{sub_task}".
+    local_start = main_start - global_offset
+    local_end = main_end - global_offset
+    action_slice = actions[local_start : local_end + 1]
+    action_slice_str = ", ".join(action_slice)
+    # print("action_slice_str:", action_slice_str)
+    mid_prompt = f"""
+        You are a robot-state labeler. For each frame index, you are given one low-level action.
+        You MUST convert each action into a short sentence using ONLY the allowed templates.
 
-            You are provided with a sequence of images which includes:
-            - Several **context images** (previous and future frames, used ONLY for understanding temporal consistency)
-            - A **main window of {window_size} images** that MUST be labeled.
+        ----------------------------------------------------
+        ACTION → TEMPLATE RULES (STRICT):
 
-            IMPORTANT:
-            - The model input contains context + main window.
-            - You MUST label ONLY the {window_size} images inside the main window.
-            - DO NOT generate labels for context frames.
+        1) For action = "go_forward":
+        MUST output:
+        "Move forward through the <area>."
 
-            The main window corresponds to the following global frame indices:
-            [{main_start} .. {main_end}]
-            These {window_size} images represent your current and upcoming observations.
-            Index {main_start} is the current state, and {main_start+1}..{main_end} are the future states.
+        2) For actions = "turn_left_slightly" / "turn_right_slightly":
+        MUST output one of:
+        "Turn slightly left toward the <area>."
+        "Turn slightly right toward the <area>."
 
-            Additional information:
-            - Total trajectory length = {horizon}.
-            - Historical commands: {hist_text}. Compare them with the global instruction to maintain consistency.
+        3) For actions = "turn_left" / "turn_right":
+        MUST output one of:
+        "Turn left at the <area> to enter the <next_area>."
+        "Turn right at the <area> to enter the <next_area>."
 
-            Your task:
-            1. **Reasoning** — Describe briefly how you interpret the robot's current progress in the task, using both context and main window frames.
-            2. **Label {window_size} states** — For each of the {window_size} main window frames, Provide a short verb-based action/state summary.
-            3. Ensure **strict temporal coherence**: the sequence of commands should reflect smooth evolution across frames.
-            4. Do NOT produce separate sentences for each image.
+        4) For action = "approaching_final_point":
+        MUST output:
+        "Move forward through the <area>."
 
-            Please output in **strict JSON format** (NO markdown, NO extra sentences):
-            {{
-                "reasoning": "Briefly describe your reasoning progress",
-                "{main_start}-{min(main_start+4, main_end)}": "brief state summary",
-                "{main_start+5}-{main_end}": "brief state summary"
-            }}
-        """
-    else :
-        mid_prompt = f"""
-        You are a robot walking in the room. This is your global instruction: "{sub_task}". 
+        ----------------------------------------------------
+        STRICT STYLE CONSTRAINTS:
+        - You MUST use the templates EXACTLY (same wording).
+        - Only <area> or <next_area> may be replaced by a short location phrase.
+        - NO additional words, NO reasons, NO compound sentences.
+        - ONE sentence per frame ONLY(under 15 words).
+        - NO adding "gradually", "slowing", "indicating", etc.
+        - You MUST output sentences in the SAME ORDER as actions are given.
 
-        The images provided represent your observations along your journey:
-        - Several **context images** (previous and future frames, used ONLY for understanding temporal consistency)
-        - A **main window of {window_size} images** that MUST be labeled.
+        ----------------------------------------------------
+        Input:
+        - Main window size: {window_size}
+        - Actions for frames {main_start}-{main_end}: {action_slice_str}
 
-        Based on these images, please:
-        1. Reason: Identify where you are in the task based on the current observation (first image) and future context (following images).
-        2. Provide a conclusion: What is the current state you are in, and what will be your next step based on the global instruction.
-        3. The current observation corresponds to step {main_start}/{horizon}, and your future states correspond to steps {main_start + 1}-{main_end}/{horizon}.
-        4. Your historical commands are: {hist_text}. Compare them with the global instruction.
+        ----------------------------------------------------
 
-        ✅ Also:
-        Please generate a short action command for each state:
-        - For the current state, provide a short command that summarizes current state with verbs.
-        - For the future state, provide a short command that summarizes future state with verbs.
-
-        Please output in **strict JSON format** (no explanations, no markdown):
+        Output format (STRICT JSON):
         {{
-            "reasoning": "Briefly describe your reasoning progress",
-            "{main_start}-{min(main_start+4, main_end)}": "Current state summary",
-            "{main_start+5}-{main_end}": "Future state summary"
+            "reasoning": "Explain briefly how you interpret the robot's task progress using images + provided actions.",
+            "{main_start}": "template-based state summary",
+            "{main_start + 1}": "template-based state summary",
+            ...
+            "{main_end}": "template-based state summary",
         }}
-    """
+        """
+    # print(mid_prompt)
     return mid_prompt
 
 
-def status_end_prompt(sub_task, main_start, main_end, horizon, historical_commands, type):
+def status_end_prompt(main_start, main_end, actions, global_offset):
     """
-    生成end batch的prompt
+    生成end batch的prompt(包含动作参考)
     """
+    # 提取整个段的动作（如 ['go_forward', 'turn_left', ...]）
 
-    hist_text = ", ".join(map(str, historical_commands)) if historical_commands else "none"
+    action_seq = ", ".join(actions)
+    # print("final_actions:",action_seq)
     end_prompt = f"""
         You are approaching the final destination of a visual navigation task.
-        This is your global instruction: "{sub_task}".
-        Historical commands: {hist_text}.
 
         You are given a sequence of images:
         - The first 5 images are past context (previous states).
-        - The remaining images represent your final steps toward the goal (images {main_start}-{main_end}).
+        - The remaining images ({main_start}-{main_end}) represent the robot's final steps toward the goal.
 
-        Based on these images, please:
-        1. Reason: Explain how the final images indicate that you are close to the goal.
-           Focus on visible objects, landmarks, or room characteristics.
-        2. Provide a conclusion: Describe the final navigation steps and confirm the arrival or near-arrival state.
-        3. Only describe and generate actions for the **last segment** (images {main_start}-{main_end}).Provide a short verb-based action/state summary.
+        Additional information:
+        - A low-level action estimation module has analyzed the robot trajectory.
+        - The predicted actions for the final segment are:
+          {action_seq}
+        - Many of these actions are "approaching_final_point", meaning the robot is slowing down and is visually very close to the goal.
 
-        Please output in **strict JSON format** (no explanations, no markdown):
+        Your job:
+        1. Identify the **nearest explicit target object or location** that the robot is stopping at.
+           This must be a close, visually dominant target the robot ends its navigation on.
+           Examples: "dining table", "kitchen counter", "cabinet", "sofa", "doorway", etc.
+
+        2. Produce ONE short template-based summary describing the final stopping point.
+           The target MUST be explicitly named.
+           Format must strictly be:
+           - "Stopping at the <explicit target>."
+        3. Keep it under 15 words.
+        4. Output strict JSON only.
+
+        Output format (STRICT JSON):
         {{
-            "reasoning": "Reasoning focusing on final goal confirmation using distinctive objects or landmarks",
-            "{main_start}-{main_end}": "Summary of final navigation actions that lead to the endpoint"
+            "reasoning": "Brief reasoning using visible spatial cues and provided actions.",
+            "{main_start}-{main_end}": "Stopping at the <explicit target>."
         }}
     """
     return end_prompt
@@ -131,37 +110,49 @@ def status_end_prompt(sub_task, main_start, main_end, horizon, historical_comman
 
 def fill_descriptions(horizon, json_data, global_offset=0):
     """
-    把上一步提取的描述填充回所有帧
-
-    Args:
-        image_list (list): 包含图片的列表，长度用于生成描述列表。
-        json_data (dict): 包含图片索引范围和描述的字典。
-
-    Returns:
-        list: 长度与 image_list 相同的描述列表。
+    将 LLM 输出的逐帧或范围描述填入固定长度的列表。
+    支持 key 形式: "100", "100-105", "[100] 状态", "{100}", 等。
     """
-    # 初始化一个与 image_list 长度一致的描述列表，默认值为 None 或空字符串
     descriptions = [None] * horizon
+
     if isinstance(json_data, str):
         json_data = json.loads(json_data)
 
-    # 遍历 JSON 数据，填充描述
-    for indices_range, description in json_data.items():
-        indices_range = re.sub(r"^[\[\{](.*?)[\]\}]$", r"\1", indices_range)
-        # 解析索引范围
-        if "reason" in indices_range:
+    for key, desc in json_data.items():
+        # 跳过 reasoning
+        if key.strip().lower() == "reasoning":
             continue
-        if "-" in indices_range:  # 处理 "start-end" 形式的范围
-            start_idx, end_idx = map(int, indices_range.split("-"))
-            for i in range(start_idx, end_idx + 1):
+
+        # 清除前后可能的 [] {} 状态标记
+        cleaned = re.sub(r"^[\[\{\(]?", "", key)
+        cleaned = re.sub(r"[\]\}\)]?$", "", cleaned)
+
+        # 去掉后缀中文“状态”
+        cleaned = cleaned.replace("状态", "").strip()
+
+        # 去掉可能存在的冒号
+        cleaned = cleaned.replace(":", "").strip()
+
+        # 解析范围形式 "100-105"
+        if "-" in cleaned:
+            try:
+                start, end = map(int, cleaned.split("-"))
+            except:
+                continue
+            for i in range(start, end + 1):
                 local_i = i - global_offset
                 if 0 <= local_i < horizon:
-                    descriptions[local_i] = description
+                    descriptions[local_i] = desc
+
         else:
-            idx = int(indices_range)
-            local_i = idx - global_offset
+            # 单帧形式 "103"
+            try:
+                i = int(cleaned)
+            except:
+                continue
+            local_i = i - global_offset
             if 0 <= local_i < horizon:
-                descriptions[local_i] = description
+                descriptions[local_i] = desc
 
     return descriptions
 

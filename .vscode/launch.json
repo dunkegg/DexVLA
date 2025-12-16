@@ -167,7 +167,23 @@
       },
 
       {
-        "name": "eval",
+        "name": "eval_in_habitat",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/eval_follow_whabitat_easy.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "3",       
+        },
+        "args": [
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
+        ],
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
+      },
+      {
+        "name": "eval_with_data",
         "type": "python",
         "request": "launch",
         "program": "${workspaceFolder}/eval_follow_with_data.py",
@@ -202,7 +218,7 @@
         "request": "launch",
 
         // 要执行的脚本
-        "program": "${workspaceFolder}/process_data/process_raw_rxr.py",
+        "program": "${workspaceFolder}/process_data/process_isaac.py",
 
         // 传递给脚本的 3 个参数
         "args": [
@@ -287,16 +303,19 @@
         // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
       },
       {
-        "name": "process obj data",
+        "name": "test habitat move",
         "type": "python",
         "request": "launch",
-        "program": "/mnt/pfs/s7fsio/code/eval/DexVLA/process_jsonl.py",
+        "program": "/mnt/pfs/3zpd5q/code/eval/DexVLA/test_habitate_move.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
-        }
-        // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
+        },
+        "args": [
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_obj.yaml"
+        ],
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       }
     ]
   }

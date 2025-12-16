@@ -35,7 +35,7 @@ from evaluate_dexvln.record import create_log_json, append_log
 
 import json
 from collections import defaultdict
-
+from pathlib import Path
 def load_json_group_by_scene(json_path):
     from collections import defaultdict
     import json
@@ -149,10 +149,19 @@ if __name__ == '__main__':
     
     max_episodes = cfg.max_episodes
     all_index = 0
-    jump_idx = get_max_episode_number(img_output_dir)+1
-    jump_idx = 0
+    # jump_idx = get_max_episode_number(img_output_dir)+1
+    # jump_idx = 0
+    start_idx = cfg.start_idx
+    end_idx=cfg.end_idx
+    sample_idx = cfg.sample_idx
 
     for scene, items in sorted(data.items()):
+        if all_index+len(items) <start_idx:
+            all_index+=len(items)
+            continue
+        if all_index>end_idx:
+            break
+
         cfg.current_scene = current_scene = scene
         try:
             simulator.close()
@@ -162,7 +171,14 @@ if __name__ == '__main__':
         pathfinder = simulator.pathfinder
         pathfinder.seed(cfg.seed)
 
-        for item in items:
+        for item in tqdm(items):
+
+            if all_index <start_idx:
+                all_index+=1
+                continue
+            if all_index>end_idx:
+                break
+
             start_pose = item["start"]
             goal_pose = item["goal"] 
 
@@ -174,8 +190,8 @@ if __name__ == '__main__':
             simulator.agents[0].set_state(reset_state)
             obs = simulator.get_sensor_observations(0)['color_0_0']
 
-            os.makedirs("/mnt/pfs/s7fsio/code/eval/DexVLA/results_eval_obj/image", exist_ok=True)
-            img_path = os.path.join("/mnt/pfs/s7fsio/code/eval/DexVLA/results_eval_obj/image", f"start.png")
+            os.makedirs(f"results_eval_obj/{sample_idx}/image", exist_ok=True)
+            img_path = os.path.join(f"results_eval_obj/{sample_idx}/image", f"start.png")
             imageio.imwrite(img_path, obs)
             
             # reset_state = simulator.agents[0].get_state()
@@ -183,8 +199,8 @@ if __name__ == '__main__':
             # reset_state.rotation = goal_pose["rotation"]
             # simulator.agents[0].set_state(reset_state)
             # obs = simulator.get_sensor_observations(0)['color_0_0']
-            # os.makedirs("/mnt/pfs/s7fsio/code/eval/DexVLA/results_eval_obj/image", exist_ok=True)
-            # img_path = os.path.join("/mnt/pfs/s7fsio/code/eval/DexVLA/results_eval_obj/image", f"end.png")
+            # os.makedirs("/mnt/pfs/3zpd5q/code/eval/DexVLA/results_eval_obj/image", exist_ok=True)
+            # img_path = os.path.join("/mnt/pfs/3zpd5q/code/eval/DexVLA/results_eval_obj/image", f"end.png")
             # imageio.imwrite(img_path, obs)
 
             black_threshold = 0.3
@@ -193,6 +209,7 @@ if __name__ == '__main__':
                 # os.makedirs("black_obs", exist_ok=True)
                 # imageio.imwrite(f'black_obs/{episode_id}.png', obs)
                 # add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist_obj.jsonl")
+                all_index += 1
                 continue
             
             obs_fps = 10
@@ -201,6 +218,7 @@ if __name__ == '__main__':
                 followed_path = generate_path_from_scene_for_obj(item, pathfinder, 5, obs_fps, robot_speed)
             except Exception as e:
                 print(f"ERROR:   {e}")
+                all_index += 1
                 continue
 
 
@@ -216,13 +234,18 @@ if __name__ == '__main__':
                 )
             except Exception as e:
                 print(f"ERROR:   {e}")
+                all_index += 1
                 continue
 
             # if len(output_data["obs"]) == 0: continue
             # 保存数据
+
+            h5_save_path = Path(f"data/raw_data/obj/move_new/{sample_idx}/episode_{all_index}.hdf5")
+            h5_save_path.parent.mkdir(parents=True, exist_ok=True)
+
             save_move_obj_data_to_h5(output_data["obs"], 
                                  walk_path= followed_path, 
-                                 h5_path=f"data/raw_data/obj/move/episode_{all_index}.hdf5",
+                                 h5_path=str(h5_save_path),
                                  item = item)
             if all_index < 50:
                 video_output = video_output_dir
@@ -236,8 +259,8 @@ if __name__ == '__main__':
             )
 
             all_index += 1
-        print(f"Case {all_index}")
-    print(f"Case {all_index}")
+            print(f"Sample:{sample_idx},  Case {all_index}")
+    
 
             
 

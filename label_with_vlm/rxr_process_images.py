@@ -17,42 +17,46 @@ def qwen_lable_images(h5_file_path, labeller):
         # -----------------------------
         images = f["obs"]["color_0_0"][:]
         instructions = f["instructions"][:]
+        instructions = [i.decode("utf-8") for i in instructions]
+        # print("instruction:",instructions)
+        actions = f["annotations_actions0"][:]
+        actions = [a.decode("utf-8") for a in actions]
+        # print("instruction:",actions)
         print(f"📂 读取到 {len(images)} 张图片")
         # -----------------------------
         # Step 2. 状态标注
         # -----------------------------
-        if "annotations_status" in f:
-            del f["annotations_status"]
-        f.create_group("annotations_status")
-        for i in range(2):
-            status_dataset_name = f"status_{i}"
-            status_annotations, all_status_reasonings = None, None
+        status_dataset_name = "annotations_status0"
+        status_annotations = None
+        need_generate_status = True
 
-            need_generate_status = True
+        if status_dataset_name in f:
+            annotations = f[status_dataset_name][()]
+            # 如果第一条不是空字符串，则跳过
+            if annotations[0].decode("utf-8") != "":
+                print("⏭️ 状态标注已存在，跳过生成。")
+                need_generate_status = False
 
-            if status_dataset_name in f:
-                annotations = f[status_dataset_name][()]
-                # 如果第一条不是空字符串，则跳过
-                if annotations[0].decode("utf-8") != "":
-                    print("⏭️ 状态标注已存在，跳过生成。")
-                    need_generate_status = False
-
-            if need_generate_status:
-                print("🤖 开始进行状态标注...")
-                type = i
-                status_result = try_label_images(
-                    labeller.label_images_status, images, instructions, type
+        if need_generate_status:
+            print("🤖 开始进行状态标注...")
+            status_result = try_label_images(
+                labeller.label_images_status,
+                images=images,
+                instructions=instructions,
+                actions=actions,
+            )
+            if status_result is not None:
+                status_annotations, _ = status_result
+                save_annotations(
+                    f, dataset_name=status_dataset_name, annotations=status_annotations
                 )
-                if status_result is not None:
-                    status_annotations, _, all_status_reasonings = status_result
-                    save_annotations(f, status_dataset_name, status_annotations)
         print(f"✅ {h5_file_path} 状态标注全部完成。\n")
         f.flush()
         del f
         gc.collect()
 
 
-def try_label_images(label_func, images, instructions, type, *args, max_retry=5, **kwargs):
+def try_label_images(label_func, images, instructions, *args, max_retry=5, **kwargs):
     """
     通用标注器：支持额外参数透传，并保留重试机制。
     """
@@ -72,37 +76,36 @@ def save_annotations(h5_file, dataset_name, annotations):
     """
     将标注结果写入 HDF5。
     """
-    grp = h5_file.require_group("annotations_status")
-    if dataset_name in grp:
-        del grp[dataset_name]
+    if dataset_name in h5_file:
+        del h5_file[dataset_name]
 
     cleaned = [s if s is not None else "null" for s in annotations]
-    grp.create_dataset(
+    h5_file.create_dataset(
         dataset_name, data=np.array(cleaned, dtype=h5py.string_dtype(encoding="utf-8"))
     )
     print(f"💾 已保存数据集: {dataset_name} ({len(annotations)} 条)")
 
-'''单个hdf5文件'''
-if __name__ == "__main__":
-    logging.basicConfig(filename="debug.log", level=logging.INFO, filemode="w")
-    labeller = QwenLabeler()
 
-    # 修改此路径为单个文件或目录：
-    h5_file_path = "label_with_vlm/hyz_data/episode_8.hdf5"
-    qwen_lable_images(h5_file_path, labeller)
-# '''整个文件夹下的hdf5文件'''
+"""单个hdf5文件"""
 # if __name__ == "__main__":
 #     logging.basicConfig(filename="debug.log", level=logging.INFO, filemode="w")
 #     labeller = QwenLabeler()
 
-#     rxr_dir = "data/raw_data/rxr_smooth"
-#     for fname in sorted(os.listdir(rxr_dir)):
-#         if fname.endswith(".hdf5"):
-#             path = os.path.join(rxr_dir, fname)
-#             print(f"==============================")
-#             print(f"🚀 开始处理文件：{path}")
-#             print(f"==============================")
-#             qwen_lable_images(path, labeller)
+#     # 修改此路径为单个文件或目录：
+#     h5_file_path = "rxr2_smooth/episode_52.hdf5"
+#     qwen_lable_images(h5_file_path, labeller)
+"""整个文件夹下的hdf5文件"""
+if __name__ == "__main__":
+    logging.basicConfig(filename="debug.log", level=logging.INFO, filemode="w")
+    labeller = QwenLabeler()
 
-#     print("\n🎉 全部 HDF5 文件标注完成！")
+    rxr_dir = "data/raw_data/rxr_smooth/"
+    for fname in sorted(os.listdir(rxr_dir)):
+        if fname.endswith(".hdf5"):
+            path = os.path.join(rxr_dir, fname)
+            print(f"==============================")
+            print(f"🚀 开始处理文件：{path}")
+            print(f"==============================")
+            qwen_lable_images(path, labeller)
 
+    print("\n🎉 全部 HDF5 文件标注完成！")

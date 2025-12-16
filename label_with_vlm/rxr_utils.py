@@ -4,6 +4,7 @@ from PIL import Image
 import numpy as np
 from collections import defaultdict
 
+
 def encode_image(image):
     """把图片转成 base64 字符串发给模型"""
     if isinstance(image, np.ndarray):
@@ -63,6 +64,7 @@ def batch_image_indices(images_length, window=10, pad=5):
         start += stride
 
     return batches
+
 
 def group_indices_by_string(strings):
     """
