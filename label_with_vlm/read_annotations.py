@@ -1,16 +1,16 @@
 import h5py
 
 # 指定你的文件路径
-h5_path = "/mnt/pfs/3zpd5q/code/eval/DexVLA/label_with_vlm/hyz_data/episode_1234.hdf5"
+h5_path = "data/raw_data/rxr_smooth/episode_999.hdf5"
 
 # 打开文件并读取
 with h5py.File(h5_path, "r") as f:
     print("Keys in this HDF5 file:", list(f.keys()))
 
     # 读取 annotations_status1
-    if "annotations_status" in f:
+    if "annotations_status0" in f:
         # status_labels = f["annotations_status"]["status_1"][:]
-        status_labels = f["annotations_status"]["status_1"][:]
+        status_labels = f["annotations_status0"][:]
         print(f"\n✅ 共 {len(status_labels)} 条 status 标签:\n")
         for i, ann in enumerate(status_labels):
             print(f"[{i:03d}] 状态: {ann.decode('utf-8') if isinstance(ann, bytes) else ann}")

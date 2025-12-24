@@ -48,6 +48,14 @@ TASK_CONFIGS = {
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
     },
+    'cross': { # for nav
+        'dataset_dir': [
+            "data/split_data/rxr",
+            "data/split_data/multi_follow_clear"
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
 }
 
 ### ALOHA fixed constants

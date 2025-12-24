@@ -294,12 +294,8 @@ def visualize_follow_path(group: h5py.Group,
     # ── 读取 language_raw（数组）────────────────────────────
     if "language_raw" in group:
         # group["language_raw"][()] 返回 ndarray(shape=(N,))
-        lang_list = group["language_raw"][()]  
+        language_str = group["language_raw"][()].decode("utf-8")
         # bytes → str
-        lang_list = [x.decode("utf-8") if isinstance(x, bytes) else x
-                     for x in lang_list]
-        # 拼到一行或多行
-        language_str = "\n".join(lang_list)
     else:
         language_str = "(no language_raw)"
 
@@ -398,8 +394,11 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
     count = 0
 
     with h5py.File(src_file, "r") as fin:
-        anno_grp = fin.get("annotations_status", None)
-        has_anno = anno_grp is not None
+        object_category = fin.get("object_category", None)
+        object_environment = fin.get("object_environment", None)
+        has_obj = object_category is not None and object_environment is not None
+        if not has_obj:
+            return 0
         # 读取连续轨迹 rel_path_org = [T, 8]
         rel_path_org = fin["rel_path"][()].astype(np.float32)
         T = len(rel_path_org)
@@ -464,31 +463,22 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 # subgrp.create_dataset("language_raw",
                 #                       data="Follow the trajectory.",
                 #                       dtype=h5py.string_dtype())
-                if has_anno:
-                    status_list = []
-                    has_null = False
 
-                    for key in anno_grp.keys():   # 例如 status_0, status_1 ...
-                        status_arr = anno_grp[key][()]  # 整个数组
-                        if obs_idx < len(status_arr):
-                            status_str = status_arr[obs_idx].decode("utf-8")
-                        else:
-                            status_str = "null"
+                object_category = fin["object_category"][()]     # bytes
+                object_category = object_category.decode("utf-8").rstrip("\x00")
+                object_environment = fin["object_environment"][()]     # bytes
+                object_environment = object_environment.decode("utf-8").rstrip("\x00")
 
-                        if status_str == "null":
-                            has_null = True
+                instruction = f'''Find the {object_environment}. Your action is 'Move' if you already see it. Otherwise 'Rotate'.
+                '''
+                dt = h5py.string_dtype(encoding='utf-8')
+                subgrp.create_dataset("language_raw", data=instruction, dtype=dt)
 
-                        status_list.append(status_str)
+                substep_reasonings = np.array(["Move"] * len(actions), dtype=object)
 
-                    # 如果存在 null → 删除 dgrp_all[str(obs_idx)] 并跳过写入
-                    if has_null:
-                        del dgrp_all[str(obs_idx)]
-                        continue
-                    else:
-                        # 写 language_raw（数组形式）
-                        dt = h5py.string_dtype(encoding='utf-8')
-                        subgrp.create_dataset("language_raw", data=status_list, dtype=dt)
-                
+                subgrp.create_dataset("substep_reasonings",
+                                      data=np.array(substep_reasonings, dtype=h5py.string_dtype()))
+
                 count += 1
                 if viz_root and False:
                     visualize_follow_path(subgrp, actions, viz_root/ep_name/f"action_{obs_idx}_{type}.png")
@@ -508,7 +498,7 @@ def main(src_dir: Path, frames_dir: Path, dst_dir: Path, viz_dir: Path|None, his
 
     count = 0
     for f in h5_files:
-        count += process_one(f, frames_dir, dst_dir, viz_dir, history)
+        count += process_one(f, frames_dir, dst_dir, viz_dir, history,sample_stride=2, future_dist=2)
         print(f"Processed {count} cases in total.")
 
 if __name__=="__main__":
@@ -517,11 +507,11 @@ if __name__=="__main__":
     args=ap.parse_args()
 
 
-    args.src_dir = "data/raw_data/rxr_smooth"
-    args.frames_dir ="data/frames/rxr"
-    args.dst_dir = "data/proc_data/rxr_new"
+    args.src_dir = "data/raw_data/obj/move_new"
+    args.frames_dir ="data/frames/obj_move"
+    args.dst_dir = "data/proc_data/obj_move"
 
-    args.viz = "results/rxr"
+    args.viz = "results/obj_move"
     args.history = 10
     viz=Path(args.viz) if args.viz else None
     main(Path(args.src_dir), Path(args.frames_dir), Path(args.dst_dir), viz, args.history)

@@ -4,8 +4,8 @@ exp_name: view_sample
 
 scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
 json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
-proc_data_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/data/proc_data/isaac
-model_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/OUTPUT/qwen2_rxr_epsilon_v1/checkpoint-30000
+proc_data_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/data/proc_data/rxr
+model_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/OUTPUT/qwen2_cross_sample/checkpoint-40000
 # model_path: OUTPUT/single_follow_normal/checkpoint-20000
 image_lens: 10
 
@@ -40,6 +40,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot_rxr_epsilon_30000_isaac
+img_output_dir: eval_plot_rxr_cross
 video_output_dir: results_eval_epsilon_30000
 log_path: null

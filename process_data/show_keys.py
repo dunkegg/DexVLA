@@ -11,5 +11,5 @@ def print_h5_structure(h5_path):
         f.visititems(visitor)
 
 # 使用示例
-# print_h5_structure("data/proc_data/test_real/episode_000.hdf5")
-print_h5_structure("data/proc_data/test_real/isaac_f4_C_episode_000.hdf5")
+print_h5_structure("data/raw_data/obj/move_new/0/episode_0.hdf5")
+# print_h5_structure("data/proc_data/test_real/isaac_f4_C_episode_000.hdf5")
