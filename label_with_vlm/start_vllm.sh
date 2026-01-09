@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES="0,1"
+export CUDA_VISIBLE_DEVICES="2,3"
 
 # 设置主节点地址和端口
 export MASTER_ADDR="localhost"  # 你也可以设置为主节点的 IP 地址
@@ -18,9 +18,11 @@ export RANK=0  # 对于进程 0
 # python evaluate/ddp_reasoning.py
 # python test.py
 # python3 -m vllm.entrypoints.openai.api_server --model checkpoints/Qwen2_5VL_72B/ --served-model-name Qwen-72B --tensor-parallel-size 4 --gpu-memory-utilization 0.8
+python3 -m vllm.entrypoints.openai.api_server --model /mnt/pfs/3zpd5q/code/mimo/DexVLA/checkpoints/MiMo-Embodied-7B/ --served-model-name Mimo --tensor-parallel-size 2 --gpu-memory-utilization 0.9
 
-python3 -m vllm.entrypoints.openai.api_server \
-    --model checkpoints/Qwen3-VL-30B-A3B-Instruct \
-    --served-model-name Qwen-30B \
-    --tensor-parallel-size 2 \
-    --gpu-memory-utilization 0.8
+
+# python3 -m vllm.entrypoints.openai.api_server \
+#     --model checkpoints/Qwen3-VL-30B-A3B-Instruct \
+#     --served-model-name Qwen-30B \
+#     --tensor-parallel-size 2 \
+#     --gpu-memory-utilization 0.8

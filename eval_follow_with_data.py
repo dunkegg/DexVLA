@@ -11,6 +11,7 @@ import cv2
 from evaluate.visualize_action import plot_actions, plot_obs
 from habitat_for_sim.utils.goat import read_yaml
 from evaluate.visualize_action import visualize_trajectory
+from label_with_vlm.mimo_action import MimoActionClient
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
     tmp = (tmp - stats[key + '_mean']) / stats[key + '_std']
@@ -205,7 +206,7 @@ def eval_bc(i,policy, target, surpervised_action, deploy_env, policy_config, raw
         
         smooth_action = smooth_yaw(all_actions, 3)
         # result = plot_obs(i, predicted_actions=all_actions ,raw_lang=description,obs = obs['top'][-1], human_position=target, target_actions=surpervised_action)
-        result = visualize_trajectory(cv_image=obs['top'][-1], all_actions= smooth_action, instruction=description)
+        result = visualize_trajectory(cv_image=obs['top'][-1], all_actions= smooth_action, instruction=description, surpervised_action = surpervised_action, subreason = outputs)
         return result
 
 
@@ -243,7 +244,8 @@ def extract_obs_and_paths(h5_file_path):
     with h5py.File(h5_file_path, 'r') as f:
         frame_paths_ds = f['frame_paths']
         frame_paths_raw = frame_paths_ds[:]  # 获取原始数据
-
+        if len(frame_paths_raw) ==0:
+            return None, None
         # 处理 frame_paths 解码
         if isinstance(frame_paths_raw[0], bytes):
             frame_paths = [s.decode('utf-8') for s in frame_paths_raw]
@@ -260,14 +262,14 @@ def extract_obs_and_paths(h5_file_path):
 
             try:
                 obs_idx = ep_group['obs_idx'][()]
-                # rel_path = ep_group['action'][()]
+                rel_path = ep_group['action'][()]
                 images = ep_group['observations/images'][()].decode('utf-8')
 
                 raw_lang = ep_group['language_raw'][()]
                 if isinstance(raw_lang, np.ndarray):
                     raw_lang = raw_lang.tolist()
-                    # raw_lang = random.choice(raw_lang)
-                    raw_lang = raw_lang[0]
+                    raw_lang = random.choice(raw_lang)
+                    # raw_lang = raw_lang[1]
 
                 raw_lang = raw_lang.decode('utf-8')
 
@@ -275,7 +277,7 @@ def extract_obs_and_paths(h5_file_path):
                 results[ep_key] = {
                     'obs_idx': obs_idx,
                     # 'target': rel_path[-1],
-                    # 'action': rel_path,
+                    'action': rel_path,
                     'images': images,
                     'raw_lang': raw_lang
                 }
@@ -341,7 +343,7 @@ if __name__ == '__main__':
     agilex_bot = FakeRobotEnv()
     ######################################
     agilex_bot.reset()
-
+    # mimo_action = MimoActionClient()
     #### 3. Load DexVLA####################
     policy = qwen2_vla_policy(policy_config)
     #######################################
@@ -370,19 +372,20 @@ if __name__ == '__main__':
         
         # 示例使用
         # print_hdf5_structure(file_path)
+
+        frames_paths, data = extract_obs_and_paths(file_path)
+        if frames_paths is None:
+            continue
+        frames_paths = frames_paths[1:]
         file_output_dir = os.path.join(output_root, f"file_{i:03d}")
         os.makedirs(file_output_dir, exist_ok=True)
-        frames_paths, data = extract_obs_and_paths(file_path)
-
-        frames_paths = frames_paths[1:]
-
         n_frames = cfg.image_lens
         for ep_id, (ep_key, ep_data) in enumerate(data.items()):
             # if ep_data["obs_idx"] ==0:
             #     continue
-            raw_lang = ep_data["raw_lang"]
-            description = raw_lang
-            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            instruction = ep_data["raw_lang"]
+            description = instruction
+            raw_lang = f"Your task is: {instruction}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
             
             
             frames = get_history_frames(frames_paths, ep_data["obs_idx"]-1, n_frames)
@@ -401,9 +404,28 @@ if __name__ == '__main__':
             target = None
             agilex_bot.set_obs(images, np.array([0,0,0]))
             # agilex_bot.set_info(actions, language_raw)
-            result_image = eval_bc(i,policy, target = None, surpervised_action= None, deploy_env= agilex_bot,policy_config= policy_config, raw_lang=raw_lang,description=description ,query_frequency=query_frequency)
+            result_image = eval_bc(i,policy, target = None, surpervised_action= ep_data['action'], deploy_env= agilex_bot,policy_config= policy_config, raw_lang=raw_lang,description=description ,query_frequency=query_frequency)
+            
+            # coords, answer = mimo_action.get_action(instruction, frames[-1], frames[:-1])
+            # img_np = np.array(result_image)
+            
+            # H, W = img_np.shape[:2]
+            # if coords:
+            #     h, w = coords[:2]
+            #     overlay = img_np.copy()
+            #     cv2.circle(overlay, (int(w*3/2), int(h*3/2)), 10, (0, 0, 255), -1)
+            # else:
+            #     cv2.putText(overlay,
+            #         answer,
+            #         (10, H - 10),                 # 左下角，留一点边距
+            #         cv2.FONT_HERSHEY_SIMPLEX,
+            #         0.8,                          # 字体大小
+            #         (255, 0, 0),                  # 颜色 (B, G, R)
+            #         2,                            # 线宽
+            #         cv2.LINE_AA
+            #     )
             out_path = os.path.join(file_output_dir, f"ep_{ep_id:04d}.png")
-            # cv2.imwrite(out_path, cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR))\
-            cv2.imwrite(out_path, result_image)
+            cv2.imwrite(out_path, cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR))
+            # cv2.imwrite(out_path, overlay)
         # break
 

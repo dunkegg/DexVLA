@@ -209,7 +209,7 @@ from PIL import Image
 import math
 
 
-def visualize_trajectory(cv_image, all_actions, instruction=""):
+def visualize_trajectory(cv_image, all_actions, instruction="", surpervised_action=None, subreason = None):
     if cv_image is None or all_actions is None:
         return
 
@@ -260,8 +260,13 @@ def visualize_trajectory(cv_image, all_actions, instruction=""):
         cv2.putText(img, text, (15, y), font, font_scale,
                     (255, 255, 255), thickness, cv2.LINE_AA)
 
+
     draw_right_text(img, instruction, int(subtitle_h * 0.5))
     # draw_right_text(img, line2, int(subtitle_h * 0.66))
+
+    if subreason is not None:
+        cv2.putText(img, subreason, (15, 15), font, font_scale,
+            (255, 255, 255), thickness, cv2.LINE_AA)
 
     # ============================================================
     # 4) 绘制轨迹
@@ -275,6 +280,14 @@ def visualize_trajectory(cv_image, all_actions, instruction=""):
         p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
         p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
         cv2.line(overlay, p1, p2, (255, 80, 0), 3, lineType=cv2.LINE_AA)
+
+    if surpervised_action is not None:
+        for i in range(len(surpervised_action) - 1):
+            x1, y1 = surpervised_action[i, :2]
+            x2, y2 = surpervised_action[i + 1, :2]
+            p1 = (int(center_x + x1 * scale), int(center_y - y1 * scale))
+            p2 = (int(center_x + x2 * scale), int(center_y - y2 * scale))
+            cv2.line(overlay, p1, p2, (0, 255, 100), 3, lineType=cv2.LINE_AA)
 
     img = cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
 

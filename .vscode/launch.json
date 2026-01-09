@@ -175,7 +175,16 @@
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
-          "CUDA_VISIBLE_DEVICES": "3",       
+          "CUDA_VISIBLE_DEVICES": "1",      
+          "http_proxy": "",
+          "https_proxy": "",
+          "ftp_proxy": "",
+          "all_proxy": "",
+
+          "HTTP_PROXY": "",
+          "HTTPS_PROXY": "",
+          "FTP_PROXY": "",
+          "ALL_PROXY": "" 
         },
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
@@ -191,7 +200,16 @@
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
-          "CUDA_VISIBLE_DEVICES": "3",       
+          "CUDA_VISIBLE_DEVICES": "1",     
+          "http_proxy": "",
+          "https_proxy": "",
+          "ftp_proxy": "",
+          "all_proxy": "",
+
+          "HTTP_PROXY": "",
+          "HTTPS_PROXY": "",
+          "FTP_PROXY": "",
+          "ALL_PROXY": ""   
         },
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_rxr.yaml"
@@ -218,7 +236,23 @@
         "request": "launch",
 
         // 要执行的脚本
-        "program": "${workspaceFolder}/process_data/process_isaac.py",
+        "program": "${workspaceFolder}/process_data/process_raw_obj.py",
+
+        // 传递给脚本的 3 个参数
+        "args": [
+        ],
+
+        // 可选：使用外部终端以便查看 tqdm 进度条
+        "console": "integratedTerminal",
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
+      },
+      {
+        "name": "Process Raw Obj Rotate",
+        "type": "debugpy",
+        "request": "launch",
+
+        // 要执行的脚本
+        "program": "${workspaceFolder}/process_data/process_raw_obj_rotate.py",
 
         // 传递给脚本的 3 个参数
         "args": [
@@ -261,7 +295,7 @@
         "name": "sample rxr",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/sample_rxr.py",
+        "program": "${workspaceFolder}/sample_rxr_rebuild.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 

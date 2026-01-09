@@ -52,8 +52,8 @@ def rotate_vector_by_quaternion(vector, quat):
     rotated_quat = quat * vector_quat * quat.conjugate()
     # Extract the vector part of the quaternion
     return np.array([rotated_quat.x, rotated_quat.y, rotated_quat.z])
-
-def make_simple_cfg(settings):
+import magnum as mn
+def make_simple_cfg(settings,num_sensors=1):
     # simulator backend
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = settings["scene"]
@@ -65,7 +65,7 @@ def make_simple_cfg(settings):
     # 初始化 sensor_specs 为一个空列表
     sensor_specs = []
     agent_cfgs = []
-    num_sensors = 1  # 设置传感器的数量
+    # num_sensors = 1  # 设置传感器的数量
     radius = agent_radius  # 设置传感器环绕的半径（相对于agent几何中心, 此时传感器位于agent碰撞模型表面）
     
     agent_cfgs = []
@@ -74,10 +74,13 @@ def make_simple_cfg(settings):
         agent_cfg.radius = agent_radius  # 设置 agent 的碰撞半径
         agent_cfg.height = 1.5  # 设置 agent 的高度
         #print("index", index)
+        sensor_pitch = [-math.pi / 4,0,math.pi / 4]
+        sensor_height = [2,1.5,0.5]
         for i in range(num_sensors):
-            angle = 2 * math.pi * i / num_sensors + math.pi / 2 # 计算每个传感器的角度：等夹角环绕360度
+            # angle = 2 * math.pi * i / num_sensors + math.pi / 2 # 计算每个传感器的角度：等夹角环绕360度
             #angle = 0 时 为正前方摄像头
-            
+            angle = 0
+
             # RGB传感器配置
             rgb_sensor_spec = habitat_sim.CameraSensorSpec()
             rgb_sensor_spec.uuid = f"color_{index}_{i}"  # 每个传感器的唯一ID
@@ -85,14 +88,14 @@ def make_simple_cfg(settings):
             rgb_sensor_spec.resolution = [settings["height"], settings["width"]]
 
             # 四元数到欧拉角的转换
-            rotation = quat_from_angle_axis(angle - math.pi / 2, np.array([0, 1, 0]))  # 计算四元数
+            rotation = quat_from_angle_axis(angle, np.array([0, 1, 0]))  # 计算四元数
             euler_angles = R.from_quat([rotation.x, rotation.y, rotation.z, rotation.w]).as_euler('xyz', degrees=False)  # 转换为欧拉角
-            
-            rgb_sensor_spec.position = [
+            euler_angles[0] = euler_angles[0] + sensor_pitch[i]
+            rgb_sensor_spec.position = mn.Vector3(
                 radius * math.cos(angle),  # x坐标
-                settings["sensor_height"],  # y坐标（高度）
+                sensor_height[i],  # y坐标（高度）
                 - radius * math.sin(angle)  # z坐标
-            ]
+            )
             #print(f"position of sensor {i}:", rgb_sensor_spec.position)
             rgb_sensor_spec.orientation = euler_angles  # 设置欧拉角
             rgb_sensor_spec.hfov = settings["hfov"]

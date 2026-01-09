@@ -13,6 +13,8 @@ def process_file(s, new_h5_path, cam_name, n_frames=10):
 
             qpos = s["qpos"]
             fout.create_dataset("/observations/qpos", data=qpos)
+            sub_reason = s["substep_reasonings"]
+            fout.create_dataset("substep_reasonings", data=sub_reason)
             # qpos = np.zeros(3,dtype=float)
             # fout.create_dataset("/observations/qpos", data=qpos, compression='gzip')
 
@@ -23,11 +25,15 @@ def process_file(s, new_h5_path, cam_name, n_frames=10):
 
             # 处理历史图片路径
             if int(s["obs_idx"][()]) <= n_frames:  # 临时条件
-                if len(history_paths) > 1:
-                    history_paths[0] = history_paths[1]
-                else:
-                    history_paths[0] = s["observations/images"][()]
+                # if len(history_paths) > 1:
+                #     history_paths[0] = history_paths[1]
+                # else:
+                #     history_paths[0] = s["observations/images"][()]
+                
                 history_paths = history_paths.tolist()
+                if len(history_paths) == 0:
+                    history_paths.append(s["observations/images"][()])
+                
 
                 # 补齐 history_paths 长度
                 if n_frames > len(history_paths):
@@ -174,8 +180,8 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
 
 if __name__ == "__main__":
     # 设置源目录和目标目录
-    src_dir = "./data/proc_data/multi_follow_clear"  # 当前目录
-    dst_dir = "./data/split_data/multi_follow_clear"  # 输出目录
+    src_dir = "data/proc_data/obj_stop"  # 当前目录
+    dst_dir = "data/split_data/obj_stop"  # 输出目录
     # 设置要保存的key
 
     process_all_hdf5_in_directory(src_dir, dst_dir)

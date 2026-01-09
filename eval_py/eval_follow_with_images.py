@@ -316,6 +316,7 @@ if __name__ == '__main__':
 
     #### 3. Load DexVLA####################
     policy = qwen2_vla_policy(policy_config)
+    
     #######################################
     import os
     for k in range(35):
@@ -342,6 +343,8 @@ if __name__ == '__main__':
             agilex_bot.set_obs(images, np.array([0,0,0]))
             # agilex_bot.set_info(actions, language_raw)
             result_image = eval_bc(i,policy, None,  agilex_bot, policy_config, raw_lang=raw_lang, query_frequency=query_frequency, target_actions=None)
+
+
             out_path = os.path.join(output_root, Path(frames[-1]).name)
             cv2.imwrite(out_path, cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR))
         # break

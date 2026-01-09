@@ -43,6 +43,7 @@ TASK_CONFIGS = {
     },
     'rxr': { # for nav
         'dataset_dir': [
+            # "data/split_data/rxr_1"
             "data/split_data/rxr"
         ],
         'episode_len': 1000,  
@@ -51,7 +52,19 @@ TASK_CONFIGS = {
     'cross': { # for nav
         'dataset_dir': [
             "data/split_data/rxr",
-            "data/split_data/multi_follow_clear"
+            "data/split_data/multi_follow_clear",
+            "data/split_data/obj_move",
+            "data/split_data/obj_rotate1",
+            "data/split_data/obj_stop",
+        ],
+        'episode_len': 1000,  
+        'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data
+    },
+    'object': { # for nav
+        'dataset_dir': [
+            "data/split_data/obj_move",
+            "data/split_data/obj_rotate1",
+            "data/split_data/obj_stop",
         ],
         'episode_len': 1000,  
         'camera_names': ['cam_high'] # replacing with your real keys in h5py formatted data

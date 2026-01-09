@@ -564,6 +564,8 @@ def walk_along_path(
             sim.agents[0].set_state(follow_state)
             obs = sim.get_sensor_observations(0)
             observations.append(obs)
+            # print(sim.agents[0]._sensors['color_0_0'].node.absolute_translation)
+            # print(sim.agents[0]._sensors['color_0_0'].node.rotation)
 
         # else:
         #     now = timestep_gap * time_step

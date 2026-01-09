@@ -40,6 +40,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot_rxr
-video_output_dir: results_eval_rxr
+img_output_dir: eval_plot_rxr_rebuild
+video_output_dir: results_eval_rxr_rebuild
 log_path: logs/log_multi_easy.json

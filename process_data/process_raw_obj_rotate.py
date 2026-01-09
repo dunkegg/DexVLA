@@ -168,7 +168,42 @@ def locate_obs_dataset(h5: h5py.File):
         return node["color_0_0"], "color_0_0"
     first = next(iter(node.keys()))
     return node[first], first
+def interpolate_yaw_only(rel_path: np.ndarray,
+                     chunk_size: int) -> np.ndarray:
+    """
+    rel_path: (N,3) or (N,8), x/z 全 0，只处理 yaw
+    return: (chunk_size, 3) -> (0, 0, yaw)
+    """
 
+    if rel_path.ndim != 2 or rel_path.shape[1] not in (3, 8):
+        raise ValueError("rel_path must be (N,3) or (N,8)")
+
+    yaw = rel_path[:, 7] if rel_path.shape[1] == 8 else rel_path[:, 2]
+
+    # 空 / 全 0
+    if yaw.size == 0 or np.allclose(yaw, 0):
+        return np.zeros((chunk_size, 3), np.float32)
+
+    # 1️⃣ unwrap 防跳变
+    yaw = np.unwrap(yaw)
+
+    N = len(yaw)
+
+    # 2️⃣ 等 index 采样
+    if chunk_size == 1:
+        yaw_out = np.array([yaw[0]], dtype=np.float32)
+    else:
+        src_idx = np.linspace(0, N - 1, chunk_size)
+        yaw_out = np.interp(src_idx, np.arange(N), yaw).astype(np.float32)
+
+    # 3️⃣ wrap 回 [-pi, pi]
+    yaw_out = (yaw_out + np.pi) % (2 * np.pi) - np.pi
+
+    # 4️⃣ 拼成 (x,z,yaw)
+    out = np.zeros((chunk_size, 3), dtype=np.float32)
+    out[:, 2] = yaw_out
+
+    return out
 def interpolate_rel_path(rel_path: np.ndarray,
                          chunk_size: int,
                          max_dist: float) -> np.ndarray:
@@ -402,8 +437,7 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
         # 读取连续轨迹 rel_path_org = [T, 8]
         rel_path_org = fin["rel_path"][()].astype(np.float32)
         T = len(rel_path_org)
-        if T == 0:
-            return 0
+
         # 检查图像数据
         obs_ds, _ = locate_obs_dataset(fin)
         if not check_episode_validity(obs_ds):
@@ -434,9 +468,8 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 # ---------- 生成短轨迹 ----------
                 short_path = extract_future_segment(rel_path_org, obs_idx, future_dist)
 
-                if len(short_path) > 1:
+                if len(short_path) < 2:
                     continue  # 不够未来数据就跳过
-                print("short path")
 
                 # ---------- 生成动作 ----------
                 fx,fy, fz = short_path[0][:3]
@@ -445,7 +478,7 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 start_quat = short_path[0][3:7]
                 start_quat =  mn.Quaternion(mn.Vector3(start_quat[1:]), start_quat[0])
                 reletive_path  = world2local_path(short_path, start_quat, start_yaw,type=0)
-                actions = interpolate_rel_path(reletive_path, 30, 3.0)
+                actions = interpolate_yaw_only(reletive_path, 30)
                 qposes = np.zeros_like(actions)
 
                 # 写入子 group
@@ -476,7 +509,7 @@ def process_one(src_file: Path, frames_root: Path, dst_root: Path, viz_root: Pat
                 dt = h5py.string_dtype(encoding='utf-8')
                 subgrp.create_dataset("language_raw", data=instruction, dtype=dt)
 
-                substep_reasonings = np.array(["Move"] * len(actions), dtype=object)
+                substep_reasonings = np.array(["Rotate"] * len(actions), dtype=object)
 
                 subgrp.create_dataset("substep_reasonings",
                                       data=np.array(substep_reasonings, dtype=h5py.string_dtype()))
@@ -499,9 +532,8 @@ def main(src_dir: Path, frames_dir: Path, dst_dir: Path, viz_dir: Path|None, his
         print("‼ 未找到 *.hdf5 文件于",src_dir); return
 
     count = 0
-    print(len(h5_files))
-    start_idx = 0
-    end_idx = 1000000
+    start_idx = 360001
+    end_idx = 400000
     for idx, f in enumerate(h5_files):
         if idx < start_idx:
             continue
@@ -518,13 +550,13 @@ if __name__=="__main__":
 
     args.src_dir = "data/raw_data/obj/move_new"
     args.frames_dir ="data/frames/obj_move"
-    args.dst_dir = "data/proc_data/obj_stop"
+    args.dst_dir = "data/proc_data/obj_move"
     args.viz = "results/obj_move"
     
-    # args.src_dir = "data/raw_data/obj/rotate"
-    # args.frames_dir ="data/frames/obj_rotate"
-    # args.dst_dir = "data/proc_data/obj_rotate"
-    # args.viz = "results/obj_rotate"
+    args.src_dir = "data/raw_data/obj/rotate"
+    args.frames_dir ="data/frames/obj_rotate"
+    args.dst_dir = "data/proc_data/obj_rotate"
+    args.viz = "results/obj_rotate"
 
     
     args.history = 10
