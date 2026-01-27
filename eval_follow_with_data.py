@@ -385,8 +385,8 @@ if __name__ == '__main__':
             #     continue
             instruction = ep_data["raw_lang"]
             description = instruction
-            raw_lang = f"Your task is: {instruction}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
-            
+            # raw_lang = f"Your task is: {instruction}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            raw_lang = f"Your task is: {instruction}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, output the pixel  coordinate of your target on the last image."
             
             frames = get_history_frames(frames_paths, ep_data["obs_idx"]-1, n_frames)
             compressed = False

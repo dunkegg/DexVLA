@@ -15,9 +15,10 @@ import logging
 from human_follower.hybrid_a.planner import HybridAStar
 
 from habitat_sim.utils.common import quat_from_coeffs, quat_from_two_vectors , quat_from_angle_axis, quat_to_angle_axis # 把 [w,x,y,z] 转 Quaternion
-from human_follower.save_data import to_quat
+from human_follower.save_data import to_quat, to_vec_array
 from habitat_for_sim.agent.path_generator import generate_path
 from habitat_for_sim.utils.frontier_exploration import FrontierExploration
+from habitat_for_sim.utils.project_pixel import project_pixel_habitat
 
 from habitat_for_sim.utils.goat import calculate_euclidean_distance
 def to_vec3(v) -> mn.Vector3:
@@ -274,6 +275,52 @@ def generate_interfer_path(interfering_humanoids, human_path, time_step=1/10, sp
         )
         interferer.reset_path(path)
 
+def habitat_data_for_pixel(depth_obs,follow_data):
+    follow_state = follow_data["follow_state"]
+    fpos, fquat, fyaw = follow_state
+    hpos, hquat, hyaw = follow_data["human_state"]
+    fpos = to_vec_array(fpos)
+    fquat = to_quat(fquat)
+    hpos = to_vec_array(hpos)
+    hquat = to_quat(hquat)
+    habitat_path = follow_data["path"]
+    habitat_path_np = np.empty((len(habitat_path), 8), np.float32)
+
+    for i, (pos, quat, yaw) in enumerate(habitat_path):
+        habitat_path_np[i, :3]   = to_vec_array(pos)        # 0..2  = 位置
+        habitat_path_np[i, 3:7]  = to_quat(quat)       # 3..6  = 四元数 wxyz
+        habitat_path_np[i, 7]    = np.float32(yaw)   
+    
+    fx,fy, fz= fpos
+    hpos[0] -=fx; hpos[1]-=fy; hpos[2]-=fz
+    fquat_mn =  mn.Quaternion(mn.Vector3(fquat[1:]), fquat[0])
+    habitat_path_np[:,0]-=fx; habitat_path_np[:,1]-=fy; habitat_path_np[:,2]-=fz
+
+
+    pixel_coords,  actions, idx, huamn_local = project_pixel_habitat(depth_obs,habitat_path_np, hpos, fquat_mn, fyaw, height=1.5)
+    follow_data["pixel_coords"] = pixel_coords
+    follow_data["actions"] = actions
+    follow_data["action_for_pixel_idx"] = idx
+    follow_data['relative_human_state'] = huamn_local
+    return follow_data
+    
+def generate_follow_data(sim, obs_idx, human_path,follow_timestep, cur_timestep, keep_distance, description=None):
+    rgb_obs = sim.get_sensor_observations(0)['color_0_1']
+    depth_obs = sim.get_sensor_observations(0)['depth_0_1']
+    if obs_idx ==116:
+        print("debug")
+
+    follow_data = {
+        "obs_idx": obs_idx,
+        "follow_state": human_path[follow_timestep],
+        "human_state": human_path[cur_timestep],
+        "path": clip_by_distance2target(human_path[follow_timestep:cur_timestep], keep_distance),
+        "desc": description,
+        "type": 0,
+    }
+    follow_data = habitat_data_for_pixel(depth_obs, follow_data)
+    return follow_data, rgb_obs, depth_obs
+
 def sample_follow(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, observations, output, follow_timestep,follow_state):
 
     keep_distance = 0.7
@@ -313,15 +360,11 @@ def sample_follow(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, o
                 follow_yaw = human_path[t][2]
                 sim.agents[0].set_state(follow_state)
                 if t%5 ==0:
-                    observations.append(sim.get_sensor_observations(0).copy())
-                    follow_data = {
-                        "obs_idx": len(observations) - 1,
-                        "follow_state": human_path[follow_timestep],
-                        "human_state": human_path[time_step],
-                        "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
-                        "desc": humanoid_agent.get_desc(),
-                        "type": 0,
-                    }
+                    observations.append((sim.get_sensor_observations(0)['color_0_1'],  sim.get_sensor_observations(0)['depth_0_1']))
+                    follow_data,rgb,depth = generate_follow_data(sim,  len(observations) - 1, human_path=human_path, 
+                                                       follow_timestep=follow_timestep,cur_timestep=time_step,
+                                                       keep_distance=keep_distance,description=humanoid_agent.get_desc())
+
                     output["follow_paths"].append(follow_data)
                 follow_timestep+=1
 
@@ -340,15 +383,10 @@ def sample_follow(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, o
             # }
             # output["follow_paths"].append(follow_data)
 
-            observations.append(sim.get_sensor_observations(0).copy())
-            follow_data = {
-                "obs_idx": len(observations) - 1,
-                "follow_state": human_path[follow_timestep],
-                "human_state": human_path[time_step],
-                "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
-                "desc": humanoid_agent.get_desc(),
-                "type": 1,
-            }
+            observations.append((sim.get_sensor_observations(0)['color_0_1'],  sim.get_sensor_observations(0)['depth_0_1']))
+            follow_data,rgb,depth = generate_follow_data(sim,  len(observations) - 1, human_path=human_path, 
+                                                follow_timestep=follow_timestep,cur_timestep=time_step,
+                                                keep_distance=keep_distance,description=humanoid_agent.get_desc())
             output["follow_paths"].append(follow_data)
     elif move_dis < 3 and follow_timestep%3==0:
         shortest_path.requested_start = follow_state.position
@@ -360,15 +398,10 @@ def sample_follow(sim, human_path,goal_pos,time_step, move_dis,humanoid_agent, o
             follow_yaw = human_path[follow_timestep][2]
             sim.agents[0].set_state(follow_state)
 
-            observations.append(sim.get_sensor_observations(0).copy())           
-            follow_data = {
-                "obs_idx": len(observations) - 1,
-                "follow_state": human_path[follow_timestep],
-                "human_state": human_path[time_step],
-                "path": clip_by_distance2target(human_path[follow_timestep:time_step], keep_distance),
-                "desc": humanoid_agent.get_desc(),
-                "type": 2,
-            }
+            observations.append((sim.get_sensor_observations(0)['color_0_1'],  sim.get_sensor_observations(0)['depth_0_1']))
+            follow_data,rgb,depth = generate_follow_data(sim, len(observations) - 1, human_path=human_path, 
+                                                follow_timestep=follow_timestep,cur_timestep=time_step,
+                                                keep_distance=keep_distance,description=humanoid_agent.get_desc())
             
             output["follow_paths"].append(follow_data)
     

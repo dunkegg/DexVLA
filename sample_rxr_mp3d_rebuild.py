@@ -676,6 +676,18 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 
+def check_episode_validity(obs_ds, threshold: float = 0.3):
+    """检查前 max_check_frames 帧是否有效（大面积黑图则无效）"""
+
+    rgb = obs_ds
+    height, width = rgb.shape[:2]  # 自动读取图像高宽
+    rgb3 = rgb[..., :3]  # 只取前三通道
+    num_black_pixels = np.sum(np.all(rgb3 == 0, axis=-1))
+    # num_black_pixels = np.sum(np.sum(rgb, axis=-1) == 0)
+    if num_black_pixels >= threshold * width * height:
+        return False  # 当前帧是大面积黑图
+    
+    return True
 
 def qvec_to_rotmat(qvec):
     """
@@ -683,6 +695,7 @@ def qvec_to_rotmat(qvec):
     scipy expects (qx, qy, qz, qw)
     """
     return R.from_quat([qvec[1], qvec[2], qvec[3], qvec[0]]).as_matrix()
+    # return R.from_quat([qvec[0], qvec[1], qvec[2], qvec[3]]).as_matrix()
 
 
 def colmap_image_to_habitat_pose(image):
@@ -704,7 +717,7 @@ def colmap_image_to_habitat_pose(image):
     quat_xyzw = R.from_matrix(R_cw).as_quat().tolist()
 
     return position, quat_xyzw
-
+import PIL.Image as PILImage
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--yaml_file_path', type=str, required=True,
@@ -712,81 +725,102 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cfg = read_yaml(args.yaml_file_path)
-    json_data = cfg.json_file_path
     img_output_dir = cfg.img_output_dir
     video_output_dir = cfg.video_output_dir
+    log_path = create_log_json() if cfg.log_path is None else cfg.log_path 
 
-
-    ######################################
     path = "rebuild_habitat"
     images = read_images(path)
     
-    # 初始化目标文件列表
-    target_files = []   
 
-    # 遍历文件夹并将相对路径添加到目标文件列表
-    for root, dirs, files in os.walk(json_data):
-        for file in files:
-            # 计算相对路径并加入列表
-            relative_path = os.path.relpath(os.path.join(root, file), json_data)
-            target_files.append(relative_path)
-    
-    
     # cfg.output_dir = os.path.join(cfg.output_parent_dir, cfg.exp_name)
 
-    data = extract_dict_from_folder(json_data, target_files)
-    
-    for file_name, content in sorted(data.items()):
+    with open("habitat_for_sim/RxR_10000.json", "r") as f:
+        scan_dict = json.load(f)
+        
+    for scan_id, entries in scan_dict.items():
         # if episodes_count > max_episodes:
         #     break
+        if '1LXtFkjw3qL' not in scan_id:
+            continue 
 
-        structured_data,  filtered_episodes = process_episodes_and_goals(content)
+
+        cfg.current_scene = scan_id
         
-                
-        cfg.current_scene = current_scene = get_current_scene(structured_data)
-        if '1LXtFkjw3qL' not in cfg.current_scene:
-            continue
         # Set up scene in Habitat
         try:
             simulator.close()
         except:
             pass
 
-        simulator = load_simulator(cfg, 3)
-        
+        simulator = load_simulator(cfg,3)
+        _ , pose_data_path =  find_scene_path(cfg, scan_id)
+
         semantic_scene = simulator.semantic_scene
         pathfinder = simulator.pathfinder
         pathfinder.seed(cfg.seed)
+        if not simulator.pathfinder.is_loaded:
+            print("Failed to load or generate navmesh.")
+            continue
+            raise RuntimeError("Failed to load or generate navmesh.")   
 
         habitat_poses = {}
 
         for img_id, img in images.items():
             pos, quat = colmap_image_to_habitat_pose(img)
             habitat_poses[img.name] = {
+                "id": img.id,
                 "position": pos,
                 "rotation_xyzw": quat,
             }
         reset_state = simulator.agents[0].get_state()
 
-        for img_id, poses in habitat_poses.items():
+        valid_obs = {}
+        count = 0
+        for img_name, poses in tqdm(
+            habitat_poses.items(),
+            total=len(habitat_poses),
+            desc="Processing habitat poses"
+        ):
+            count+=1
+            # if count>1000:
+            #     break
 
+            valid_obs[poses['id']] = {
+                "name": img_name,
+                "valid" : True    
+            }
             reset_state.position = poses["position"]
             reset_state.rotation = to_quat(poses["rotation_xyzw"])
             simulator.agents[0].set_state(reset_state)
-            obs = simulator.get_sensor_observations(0)['color_0_1']
+            rgb_obs = simulator.get_sensor_observations(0)['color_0_1']
+            depth_obs = simulator.get_sensor_observations(0)['depth_0_1']
+            if not check_episode_validity(rgb_obs, threshold=0.4):
+                valid_obs[poses['id']]["valid"]=False
+                continue
+
             # os.makedirs("black_obs", exist_ok=True)
-            imageio.imwrite(f'rebuild_habitat/{img_id}.png', obs)
-
-        # try:
-        #     reset_state = simulator.agents[0].get_state()
-        #     reset_state.position = followed_path[0][0]
-        #     reset_state.rotation = to_quat(followed_path[0][1])
-        #     simulator.agents[0].set_state(reset_state)
-        #     obs = simulator.get_sensor_observations(0)['color_0_1']
-        # except Exception as e:
-        #     print(f"ERROR:   {e}")
-        #     continue
-
+            out_name = img_name.replace(".jpg", ".png")
+            imageio.imwrite(f"rebuild_habitat/rgb/{out_name}", rgb_obs)
+            depth_mm = np.clip(depth_obs * 1000, 0, 65535).astype(np.uint16)
+            path = os.path.join("rebuild_habitat", "depth", out_name)
+            PILImage.fromarray(depth_mm).save(path)
+        
+            depth_vis = np.clip(depth_obs, 0, 10)
+            depth_vis = (depth_vis / 10.0 * 255).astype(np.uint8)
+            path = os.path.join("rebuild_habitat", "depth_vis", out_name)
+            PILImage.fromarray(depth_vis).save(path)
             
+        def save_valid_obs_txt(valid_obs: dict, txt_path: str):
+            """
+            保存 valid_obs 到 txt
+            每行格式: id name valid
+            """
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write("id name valid\n")  # header（可删）
+                for k in sorted(valid_obs.keys()):
+                    name = valid_obs[k]["name"]
+                    valid = int(valid_obs[k]["valid"])
+                    f.write(f"{k} {name} {valid}\n")
 
-
+        save_valid_obs_txt(valid_obs, "rebuild_habitat/valid_images.txt")

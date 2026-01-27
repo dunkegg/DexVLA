@@ -8,10 +8,11 @@ def process_file(s, new_h5_path, cam_name, n_frames=10):
     try:
         with h5py.File(new_h5_path, 'w') as fout:
             # 读取数据
-            action = s["action"]
-            fout.create_dataset("/action", data=action)
+
 
             qpos = s["qpos"]
+            action = s["action"]
+            fout.create_dataset("/action", data=action)
             fout.create_dataset("/observations/qpos", data=qpos)
             sub_reason = s["substep_reasonings"]
             fout.create_dataset("substep_reasonings", data=sub_reason)
@@ -131,15 +132,16 @@ def save_selected_keys_as_individual_h5(src_h5_path, dst_dir):
             count = 0
             base_filename = os.path.basename(src_h5_path).replace('.hdf5', '')
             cam_name = 'cam_high'
+            episode_list = list(sgrp_all.values()) 
+            # for sub in sgrp_all:
+            for idx, episode_data in enumerate(episode_list):
+                # s = sgrp_all[sub]
 
-            for sub in sgrp_all:
-                s = sgrp_all[sub]
-
-                new_h5_filename = f"{base_filename}_{sub}.hdf5"
+                new_h5_filename = f"{base_filename}_{idx}.hdf5"
                 new_h5_path = os.path.join(dst_dir, new_h5_filename)
 
                 try:
-                    success = process_file(s, new_h5_path, cam_name, n_frames=10)
+                    success = process_file(episode_data, new_h5_path, cam_name, n_frames=10)
                     if success:
                         # print(f"[OK] {new_h5_path}")
                         count += 1
@@ -170,6 +172,8 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
     total = 0
     for h5_file in h5_files:
         print(f"\n>>> Processing {h5_file}")
+        if total > 200000:
+            break
         try:
             count = save_selected_keys_as_individual_h5(h5_file, dst_dir)
             total += count
@@ -180,8 +184,8 @@ def process_all_hdf5_in_directory(src_dir, dst_dir):
 
 if __name__ == "__main__":
     # 设置源目录和目标目录
-    src_dir = "data/proc_data/obj_stop"  # 当前目录
-    dst_dir = "data/split_data/obj_stop"  # 输出目录
+    src_dir = "data/proc_data/single_follow_pixel"  # 当前目录
+    dst_dir = "data/split_data/single_follow_pixel"  # 输出目录
     # 设置要保存的key
 
     process_all_hdf5_in_directory(src_dir, dst_dir)

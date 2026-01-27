@@ -9,7 +9,7 @@ from human_follower.walk_behavior import get_path_with_time
 import magnum as mn
 import numpy as np
 
-def load_simulator(cfg, num_sensor = 1):
+def load_simulator(cfg, num_sensor = 1,col_map=False):
     scene_mesh_dir, _ = find_scene_path(cfg, cfg.current_scene)
     sim_settings = {
         "scene": scene_mesh_dir,
@@ -19,7 +19,7 @@ def load_simulator(cfg, num_sensor = 1):
         "height": cfg.img_height,
         "hfov": cfg.hfov,
     }
-    sim_cfg = make_simple_cfg(sim_settings, num_sensor)
+    sim_cfg = make_simple_cfg(sim_settings, num_sensor,col_map)
     simulator = habitat_sim.Simulator(sim_cfg)
     
     # 从 sim_cfg 中获取 agent 配置

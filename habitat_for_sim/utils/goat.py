@@ -227,7 +227,9 @@ def extract_dict_from_folder(folder_path, target_files):
         file_path = os.path.join(folder_path, file_name)
         if os.path.isfile(file_path) and file_name.endswith('.json.gz'):
             try:
-                extracted_data[file_name] = load_json_gz(file_path)
+                key = file_name.replace('.json.gz', '')
+                extracted_data[key] = load_json_gz(file_path)
+                # extracted_data[file_name] = load_json_gz(file_path)
             except Exception as e:
                 print(f"Error loading {file_name}: {e}")
         else:

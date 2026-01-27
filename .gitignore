@@ -190,3 +190,5 @@ test*/
 sample_plot*
 valid_candidates*
 logs/
+
+rebuild_habitat/

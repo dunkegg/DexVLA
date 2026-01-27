@@ -1,37 +1,26 @@
-import sys
+
 import os
 import random
 import numpy as np
-import h5py
-import cv2
+
 import json
 import magnum as mn
 from tqdm import tqdm
 import habitat_sim
-from habitat_sim.utils import viz_utils as vut
+# from habitat_sim.utils import viz_utils as vut
 print(habitat_sim.__file__)
 import argparse
-import imageio
-from habitat_for_sim.utils.goat import read_yaml, extract_dict_from_folder, get_current_scene, process_episodes_and_goals, convert_to_scene_objects, find_scene_path, calculate_euclidean_distance
+from habitat_for_sim.utils.goat import read_yaml, extract_dict_from_folder, get_current_scene, process_episodes_and_goals, convert_to_scene_objects
 from habitat_for_sim.agent.path_generator import generate_path
-from habitat_for_sim.utils.frontier_exploration import FrontierExploration
 from scipy.spatial.transform import Rotation as R
 # 将上级目录加入 Python 搜索路径
 from habitat_for_sim.utils.load_scene import load_simulator, generate_path_from_scene
-
-from human_follower.walk_behavior import walk_along_path_multi, generate_interfere_path_from_target_path, get_path_with_time,generate_interfer_path, generate_interfere_sample_from_target_path
+from human_follower.walk_behavior import walk_along_path_multi, get_path_with_time, generate_interfere_sample_from_target_path
 from human_follower.human_agent import AgentHumanoid, get_humanoid_id
 from human_follower.save_data import save_output_to_h5, to_quat
-from habitat_for_sim.utils.explore.explore_habitat import (
-    make_simple_cfg,
-    pos_normal_to_habitat,
-    pos_habitat_to_normal,
-    pose_habitat_to_normal,
-    pose_normal_to_tsdf,
-)
-from evaluate_dexvln.robot import FakeRobotEnv, qwen2_vla_policy
-from evaluate_dexvln.record import create_log_json, append_log
 
+from evaluate_dexvln.record import create_log_json, append_log
+from process_data.visualize_sample_data import render_sequence_and_make_video 
 
 def make_key(scene: str, idx: int) -> str:
     return f"{scene}_{idx}"
@@ -192,7 +181,7 @@ if __name__ == '__main__':
                 simulator.close()
             except:
                 pass
-            simulator = load_simulator(cfg)
+            simulator = load_simulator(cfg,3)
 
             # ###label
 
@@ -235,12 +224,12 @@ if __name__ == '__main__':
             black_threshold = 0.3
             # if cfg.multi_humanoids:
             #     black_threshold = 0.1
-            if not check_episode_validity(obs, threshold=black_threshold):
-                print("invalid black observations")
-                os.makedirs("black_obs", exist_ok=True)
-                imageio.imwrite(f'black_obs/{episode_id}.png', obs)
-                add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
-                continue
+            # if not check_episode_validity(obs, threshold=black_threshold):
+            #     print("invalid black observations")
+            #     os.makedirs("black_obs", exist_ok=True)
+            #     imageio.imwrite(f'black_obs/{episode_id}.png', obs)
+            #     add_to_blacklist(current_scene, episode_id , "scene_episode_blacklist.jsonl")
+            #     continue
 
 
             
@@ -275,19 +264,20 @@ if __name__ == '__main__':
             except Exception as e:
                 print(f"ERROR:   {e}")
                 continue
-
             
-            save_output_to_h5(output_data, f"data/raw_data/multi_follow_clear/episode_{all_index}.hdf5")
-            if all_index < 50:
-                video_output = video_output_dir
-                os.makedirs(video_output, exist_ok=True)
-                vut.make_video(
-                    output_data["obs"],
-                    "color_0_0",
-                    "color",
-                    f"{video_output}/humanoid_wrapper_{all_index}",
-                    open_vid=False,
-                )
+
+            # render_sequence_and_make_video(output_data, f"{img_output_dir}/episode_{all_index}",f"{video_output_dir}/episode_{all_index}")
+            save_output_to_h5(output_data, f"data/raw_data/single_follow_pixel/episode_{all_index}.hdf5")
+            # if all_index < 50:
+            #     video_output = video_output_dir
+            #     os.makedirs(video_output, exist_ok=True)
+            #     vut.make_video(
+            #         output_data["obs"],
+            #         "color_0_0",
+            #         "color",
+            #         f"{video_output}/humanoid_wrapper_{all_index}",
+            #         open_vid=False,
+            #     )
             print(f"Case {all_index}, {humanoid_name} Done, Already has {episodes_count} cases")
             episodes_count+=len(output_data["follow_paths"])
             all_index+=1

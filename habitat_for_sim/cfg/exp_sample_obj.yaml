@@ -10,12 +10,14 @@ json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/trai
 # json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 move_data_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/valid_candidates.jsonl
 
-start_idx: 324001
-end_idx: 370000
-sample_idx: 9
-
+# start_idx: 324001
+# end_idx: 370000
+# sample_idx: 9
+num_workers: 30
+num_gpus: 4
 image_lens: 10
-
+obs_fps: 10
+robot_speed: 0.7
 max_episodes: 500000
 multi_humanoids: true
 

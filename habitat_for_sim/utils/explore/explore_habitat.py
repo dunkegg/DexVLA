@@ -53,7 +53,7 @@ def rotate_vector_by_quaternion(vector, quat):
     # Extract the vector part of the quaternion
     return np.array([rotated_quat.x, rotated_quat.y, rotated_quat.z])
 import magnum as mn
-def make_simple_cfg(settings,num_sensors=1):
+def make_simple_cfg(settings,num_sensors=1,colmap=False):
     # simulator backend
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = settings["scene"]
@@ -61,7 +61,7 @@ def make_simple_cfg(settings,num_sensors=1):
     sim_cfg.load_semantic_mesh = False  # 禁用语义网格加载
     sim_cfg.enable_physics = True 
     # agent 半径
-    agent_radius = 0.4
+    agent_radius = 0.0
     # 初始化 sensor_specs 为一个空列表
     sensor_specs = []
     agent_cfgs = []
@@ -74,12 +74,21 @@ def make_simple_cfg(settings,num_sensors=1):
         agent_cfg.radius = agent_radius  # 设置 agent 的碰撞半径
         agent_cfg.height = 1.5  # 设置 agent 的高度
         #print("index", index)
-        sensor_pitch = [-math.pi / 4,0,math.pi / 4]
+        sensor_pitch = [-math.pi / 4, 0 ,math.pi / 4]
         sensor_height = [2,1.5,0.5]
         for i in range(num_sensors):
             # angle = 2 * math.pi * i / num_sensors + math.pi / 2 # 计算每个传感器的角度：等夹角环绕360度
             #angle = 0 时 为正前方摄像头
             angle = 0
+
+
+            # 四元数到欧拉角的转换
+            rotation = quat_from_angle_axis(angle, np.array([0, 1, 0]))  # 计算四元数
+            euler_angles = R.from_quat([rotation.x, rotation.y, rotation.z, rotation.w]).as_euler('xyz', degrees=False)  # 转换为欧拉角
+            euler_angles[0] = euler_angles[0] + sensor_pitch[i]
+            ##col map
+            if colmap:
+                euler_angles[2] = euler_angles[2] + math.pi / 2
 
             # RGB传感器配置
             rgb_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -87,10 +96,7 @@ def make_simple_cfg(settings,num_sensors=1):
             rgb_sensor_spec.sensor_type = habitat_sim.SensorType.COLOR
             rgb_sensor_spec.resolution = [settings["height"], settings["width"]]
 
-            # 四元数到欧拉角的转换
-            rotation = quat_from_angle_axis(angle, np.array([0, 1, 0]))  # 计算四元数
-            euler_angles = R.from_quat([rotation.x, rotation.y, rotation.z, rotation.w]).as_euler('xyz', degrees=False)  # 转换为欧拉角
-            euler_angles[0] = euler_angles[0] + sensor_pitch[i]
+            ########
             rgb_sensor_spec.position = mn.Vector3(
                 radius * math.cos(angle),  # x坐标
                 sensor_height[i],  # y坐标（高度）
@@ -101,19 +107,19 @@ def make_simple_cfg(settings,num_sensors=1):
             rgb_sensor_spec.hfov = settings["hfov"]
             sensor_specs.append(rgb_sensor_spec)
             
-            # # 深度传感器配置
-            # depth_sensor_spec = habitat_sim.CameraSensorSpec()
-            # depth_sensor_spec.uuid = f"depth_{index}_{i}"  # 每个传感器的唯一ID
-            # depth_sensor_spec.sensor_type = habitat_sim.SensorType.DEPTH
-            # depth_sensor_spec.resolution = [settings["height"], settings["width"]]
-            # depth_sensor_spec.position = [
-            #     radius * math.cos(angle),  # x坐标
-            #     settings["sensor_height"],  # y坐标（高度）
-            #     - radius * math.sin(angle)   # z坐标
-            # ]
-            # depth_sensor_spec.orientation = euler_angles  # 设置欧拉角
-            # depth_sensor_spec.hfov = settings["hfov"]
-            # sensor_specs.append(depth_sensor_spec)
+            # 深度传感器配置
+            depth_sensor_spec = habitat_sim.CameraSensorSpec()
+            depth_sensor_spec.uuid = f"depth_{index}_{i}"  # 每个传感器的唯一ID
+            depth_sensor_spec.sensor_type = habitat_sim.SensorType.DEPTH
+            depth_sensor_spec.resolution = [settings["height"], settings["width"]]
+            depth_sensor_spec.position = [
+                radius * math.cos(angle),  # x坐标
+                settings["sensor_height"],  # y坐标（高度）
+                - radius * math.sin(angle)   # z坐标
+            ]
+            depth_sensor_spec.orientation = euler_angles  # 设置欧拉角
+            depth_sensor_spec.hfov = settings["hfov"]
+            sensor_specs.append(depth_sensor_spec)
 
         agent_cfg.sensor_specifications = sensor_specs
         # agent_cfg.action_space = {

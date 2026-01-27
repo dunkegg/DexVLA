@@ -212,15 +212,15 @@
           "ALL_PROXY": ""   
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_rxr.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
         ],
-        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
+        "python": "/mnt/pfs/3zpd5q/qwen2_5_vla/bin/python"  // 你的 conda 环境路径
       },
       {
         "name": "follow split_task",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/process_data/split_rxr.py",
+        "program": "${workspaceFolder}/process_data/split_follow.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -236,7 +236,7 @@
         "request": "launch",
 
         // 要执行的脚本
-        "program": "${workspaceFolder}/process_data/process_raw_obj.py",
+        "program": "${workspaceFolder}/process_data/process_raw_follow.py",
 
         // 传递给脚本的 3 个参数
         "args": [
@@ -277,10 +277,10 @@
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
       {
-        "name": "goat follow",
+        "name": "sample follow",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/goat_follow_one.py",
+        "program": "${workspaceFolder}/multi_pro_sample_follow.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -295,7 +295,7 @@
         "name": "sample rxr",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/sample_rxr_rebuild.py",
+        "program": "${workspaceFolder}/sample_rxr_mp3d_rebuild.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -319,22 +319,23 @@
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_obj.yaml"
         ],
-        // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },
       {
         "name": "sample obj move",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/sample_obj_move.py",
+        "program": "${workspaceFolder}/multi_pro_sample_obj_move.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
         "env": {
+
         },
         "args": [
           "--yaml_file_path", "habitat_for_sim/cfg/exp_sample_obj.yaml"
         ],
-        // "python": "/mnt/pfs/3zpd5q/habitat_env/bin/activate"
+        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"
       },
       {
         "name": "test habitat move",

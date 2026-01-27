@@ -2,7 +2,7 @@ import h5py, math, numpy as np, magnum as mn
 import quaternion as qt          # pip install numpy-quaternion
 
 # ---------- 辅助转换 ---------- #
-def to_vec3(arr_like):
+def to_vec_array(arr_like):
     """
     任意 Vector3 表示 → np.float32[3]
     支持：Magnum Vector3 / ndarray / list / tuple
@@ -33,54 +33,77 @@ def to_quat(arr_like):
 
 # ---------- 主保存函数 ---------- #
 
-def save_obs_list(obs_list, h5file, sensor_key="color_0_0"):
+# def save_obs_list(obs_list, h5file, sensor_key="color_0_0"):
+#     """
+#     obs_list : List[Dict[str, ndarray]]
+#         每个元素是一次观测的多模态 dict
+#     sensor_key : 选哪一个传感器写入，可换 'depth_0_0' 等
+#     """
+#     # 取出对应传感器序列
+#     frames = [np.asarray(obs[sensor_key]) for obs in obs_list]
+
+#     # 是否同尺寸？
+#     shapes = {f.shape for f in frames}
+#     if len(shapes) == 1:                      # 尺寸一致，可 stack 为 4-D
+#         dataset = np.stack(frames)            # (N,H,W,C) 或 (N,H,W)
+#         h5file.create_dataset(f"obs/{sensor_key}",
+#                               data=dataset,
+#                               compression="gzip")
+#     else:                                     # 尺寸不一样，逐帧存
+#         grp = h5file.create_group(f"obs/{sensor_key}")
+#         for i, img in enumerate(frames):
+#             grp.create_dataset(f"{i:06d}",
+#                                data=img,
+#                                compression="gzip")
+
+def save_obs_list(obs_list, h5file):
     """
     obs_list : List[Dict[str, ndarray]]
         每个元素是一次观测的多模态 dict
     sensor_key : 选哪一个传感器写入，可换 'depth_0_0' 等
     """
     # 取出对应传感器序列
-    frames = [np.asarray(obs[sensor_key]) for obs in obs_list]
+    rgb_frames = [np.asarray(obs[0]) for obs in obs_list]
+    depth_frames = [np.asarray(obs[1]) for obs in obs_list]
 
-    # 是否同尺寸？
-    shapes = {f.shape for f in frames}
-    if len(shapes) == 1:                      # 尺寸一致，可 stack 为 4-D
-        dataset = np.stack(frames)            # (N,H,W,C) 或 (N,H,W)
-        h5file.create_dataset(f"obs/{sensor_key}",
-                              data=dataset,
-                              compression="gzip")
-    else:                                     # 尺寸不一样，逐帧存
-        grp = h5file.create_group(f"obs/{sensor_key}")
-        for i, img in enumerate(frames):
-            grp.create_dataset(f"{i:06d}",
-                               data=img,
-                               compression="gzip")
+                                # 尺寸不一样，逐帧存
+    rgb_grp = h5file.create_group(f"obs/rgb")
+    for i, img in enumerate(rgb_frames):
+        rgb_grp.create_dataset(f"{i:06d}",
+                            data=img,
+                            compression="gzip")
+    depth_grp = h5file.create_group(f"obs/depth")
+    for i, img in enumerate(depth_frames):
+        depth_grp.create_dataset(f"{i:06d}",
+                            data=img,
+                            compression="gzip")
+
 def save_output_to_h5(output: dict, h5_path="output.h5"):
     """
     output['obs']            : List[np.ndarray(H,W,C)]
     output['follow_paths']   : List[dict]  每条 dict 结构同题目
     """
     with h5py.File(h5_path, "w") as f:
-        save_obs_list(output["obs"], f, sensor_key="color_0_0")
+        save_obs_list(output["obs"], f)
 
         # ② 路径组
         grp = f.create_group("follow_paths")
         for k, fp in enumerate(output["follow_paths"]):
             g = grp.create_group(f"{k:06d}")
             g.create_dataset("obs_idx", data=np.int32(fp["obs_idx"]))
-            g.create_dataset("type", data=np.int32(fp["type"]))
+            # g.create_dataset("type", data=np.int32(fp["type"]))
             dt = h5py.string_dtype(encoding='utf-8')
             g.create_dataset("desc", data=fp["desc"], dtype=dt)
   
             # follow_state
             fpos, fquat, fyaw = fp["follow_state"]
-            g.create_dataset("follow_pos", data=to_vec3(fpos))
+            g.create_dataset("follow_pos", data=to_vec_array(fpos))
             g.create_dataset("follow_quat", data=to_quat(fquat))
             g.create_dataset("follow_yaw",  data=np.float32(fyaw))   
 
             # human_state
             hpos, hquat, hyaw = fp["human_state"]
-            g.create_dataset("human_pos", data=to_vec3(hpos))
+            g.create_dataset("human_pos", data=to_vec_array(hpos))
             g.create_dataset("human_quat", data=to_quat(hquat))
             g.create_dataset("human_yaw",  data=np.float32(hyaw))  
 
@@ -89,7 +112,7 @@ def save_output_to_h5(output: dict, h5_path="output.h5"):
             path_np = np.empty((len(path_list), 8), np.float32)
 
             for i, (pos, quat, yaw) in enumerate(path_list):
-                path_np[i, :3]   = to_vec3(pos)        # 0..2  = 位置
+                path_np[i, :3]   = to_vec_array(pos)        # 0..2  = 位置
                 path_np[i, 3:7]  = to_quat(quat)       # 3..6  = 四元数 wxyz
                 path_np[i, 7]    = np.float32(yaw)    
             g.create_dataset("rel_path", data=path_np, compression="gzip")
@@ -99,9 +122,38 @@ def save_output_to_h5(output: dict, h5_path="output.h5"):
             # path_np = np.empty((len(path_list), 3), np.float32)
 
             # for i, pos in enumerate(path_list):
-            #     path_np[i, :3]   = to_vec3(pos)        # 0..2  = 位置
+            #     path_np[i, :3]   = to_vec_array(pos)        # 0..2  = 位置
 
-            g.create_dataset("shortest_path", data=path_np, compression="gzip")
+            # g.create_dataset("shortest_path", data=path_np, compression="gzip")
+            g.create_dataset(
+                "actions",
+                data=fp["actions"],
+                compression="gzip"
+            )
+
+            if fp["pixel_coords"] is None:
+                # 不创建 dataset，只打一个标记
+                g.attrs["pixel_coords_is_none"] = True
+            else:
+                pixel_coords_arr = np.array(fp["pixel_coords"], dtype=np.int32)
+                g.create_dataset(
+                    "pixel_coords",
+                    data=pixel_coords_arr,
+                    compression="gzip"
+                )
+                g.attrs["pixel_coords_is_none"] = False
+
+                g.create_dataset(
+                    "action_for_pixel_idx",
+                    data=np.array([fp["action_for_pixel_idx"]], dtype=np.int32),
+                    compression="gzip"
+                )
+            g.create_dataset(
+                "relative_human_state",
+                data=np.array(fp["relative_human_state"], dtype=np.float32),
+                compression="gzip"
+            )
+
     print(f"✅  HDF5 saved to: {h5_path}")
 
 
@@ -132,7 +184,7 @@ def save_walk_data_to_h5(observations, walk_path, h5_path="output.h5"):
         path_np = np.empty((len(walk_path), 8), np.float32)
 
         for i, (pos, quat, yaw) in enumerate(walk_path):
-            path_np[i, :3] = to_vec3(pos)        # 位置
+            path_np[i, :3] = to_vec_array(pos)        # 位置
             path_np[i, 3:7] = to_quat(quat)   # 四元数
             path_np[i, 7] = yaw
 
@@ -156,7 +208,7 @@ def save_rotate_obj_data_to_h5(observations, walk_path, h5_path, episode_data):
 
         path_np = np.empty((len(walk_path), 8), np.float32)
         for i, (pos, quat, yaw) in enumerate(walk_path):
-            path_np[i, :3] = to_vec3(pos)       # 位置
+            path_np[i, :3] = to_vec_array(pos)       # 位置
             path_np[i, 3:7] = to_quat(quat)    # 四元数
             path_np[i, 7] = yaw
         f.create_dataset("rel_path", data=path_np, compression="gzip")
@@ -173,7 +225,7 @@ def save_move_obj_data_to_h5(observations, walk_path, h5_path, item):
 
         path_np = np.empty((len(walk_path), 8), np.float32)
         for i, (pos, quat, yaw) in enumerate(walk_path):
-            path_np[i, :3] = to_vec3(pos)       # 位置
+            path_np[i, :3] = to_vec_array(pos)       # 位置
             path_np[i, 3:7] = to_quat(quat)    # 四元数
             path_np[i, 7] = yaw
         f.create_dataset("rel_path", data=path_np, compression="gzip")
