@@ -21,7 +21,7 @@
 import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
-
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -1974,7 +1974,7 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
 
         ret = self.policy_head(actions=actions, hidden_states=action_hidden_states, states=states, is_pad=is_pad)
         
-        loss = {'loss': ret['loss'] + self.llm_loss_weight * llm_loss,
+        loss = {'loss': 0.0*ret['loss'] + self.llm_loss_weight * llm_loss,
                 'llm_loss': llm_loss,
                 'action_loss': ret['loss']}
         
@@ -2146,7 +2146,7 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
         #     output = self.policy_head(actions, distilbert_embed, states.to(distilbert_embed.dtype), is_pad)
         #     return output, "[distilbert_no_generation]"
 
-
+        start_token_time = time.time()
         with torch.inference_mode():
             outputs = self.generate(
                 input_ids,
@@ -2164,7 +2164,7 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
                 output_hidden_states=True,
                 return_dict_in_generate=True,
             )
-
+        print("spend token time ", time.time() - start_token_time)
         output_ids = outputs.sequences
         # last_hidden_states = outputs.hidden_states[-2][-1]
         input_token_len = input_ids.shape[1]
@@ -2172,7 +2172,7 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
         if n_diff_input_output > 0:
             print(f'[Warning] {n_diff_input_output} output_ids are not the same as the input_ids')
         outputs_text = tokenizer.batch_decode(output_ids[:, input_token_len:], skip_special_tokens=False)[0]
-
+        print("out_put:", outputs_text)
         outputs_text = outputs_text.strip()
         last_hidden_states = [each[-1] for each in outputs.hidden_states] # all hidden states
         all_hidden_states = torch.cat(last_hidden_states, dim=1)
@@ -2199,8 +2199,9 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
         else:
             action_hidden_states = torch.cat(last_hidden_states, dim=1)
 
-
+        start_diffu_time = time.time()
         action = self.policy_head(actions, action_hidden_states, states.to(all_hidden_states.dtype), is_pad)
+        print("spend diffu time ", time.time() - start_diffu_time)
         return action, outputs_text
 
     def evaluate_tinyvla(self,

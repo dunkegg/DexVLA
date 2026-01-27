@@ -103,103 +103,103 @@ def plot_actions(i,predicted_actions, target_actions, raw_lang, post_process, fr
     print(f"✅ Saved: {save_path}")
 
 
-def plot_obs(time,predicted_actions ,raw_lang, obs,human_position, target_actions = None, smooth_actions = None):
-    # for idx, img in enumerate(frames):
-    #     out_path = os.path.join(output_dir, f"case_{i}_frame_{idx:04d}.png")  # 命名格式: frame_0000.png
-    #     cv2.imwrite(out_path, img)
-
-
-    # 颜色设置
+def plot_obs(time, predicted_actions, raw_lang, sub_reasoning, obs,
+             human_position, target_actions=None, smooth_actions=None):
+    # === 颜色设置 ===
     pred_color = 'tab:blue'
     target_color = 'tab:red'
     smooth_color = 'tab:green'
 
-    # 遍历每个 batch
-    # for i in range(predicted_actions.shape[0]):
-    # pred = predicted_actions.to(dtype=torch.float32).cpu().numpy()
-    # pred = [post_process(raw_action) for raw_action in pred]
+    # === 提取预测动作并中心化 ===
     pred = predicted_actions
     pred_base = pred[0, :2]
-
-
     pred_xy = pred[:, :2] - pred_base
     if human_position is not None:
         human_position[0] = human_position[0] - pred_base[0]
         human_position[2] = human_position[2] - pred_base[1]
     pred_yaw = pred[:, 2:]
-
-    # 组合回原来的形状
-
     pred = np.concatenate([pred_xy, pred_yaw], axis=1)
 
-    # === 创建大图 ===
-    fig = plt.figure(figsize=(12, 6))
-    canvas = FigureCanvas(fig) 
-    # 左侧：obs 图像
-    ax_img = fig.add_subplot(1, 2, 1)
-    # ax_img.imshow(cv2.cvtColor(obs['color_0_0'], cv2.COLOR_BGR2RGB))
+    # === 创建 Figure 和子图布局 ===
+    fig = plt.figure(figsize=(12, 8))  # 高度增大，放得下三行
+    canvas = FigureCanvas(fig)
+
+    # 使用 GridSpec 控制布局（2行2列，上方放图，下方放yaw）
+    gs = fig.add_gridspec(2, 2, height_ratios=[3, 1])
+
+    # 左上：图像观察
+    ax_img = fig.add_subplot(gs[0, 0])
     if isinstance(obs, Image.Image):
-        obs = np.array(obs)  # PIL -> RGB numpy
-        obs = cv2.cvtColor(obs, cv2.COLOR_RGB2BGR)  # 如果后续逻辑假设 BGR
+        obs = np.array(obs)
+        obs = cv2.cvtColor(obs, cv2.COLOR_RGB2BGR)
     ax_img.imshow(cv2.cvtColor(obs, cv2.COLOR_BGR2RGB))
     ax_img.set_title('Observation')
     ax_img.axis('off')
 
-    # 右侧：动作轨迹图
-    ax_xy = fig.add_subplot(1, 2, 2)
-    # ax_yaw = fig.add_subplot(2, 2, 4)
+    # 右上：XY轨迹
+    # 右上：XY轨迹（以 ROS 坐标系展示）
+    ax_xy = fig.add_subplot(gs[0, 1])
 
-    ax_xy.plot(pred[:, 0], pred[:, 1], color=pred_color, label='Predicted XY')
-    ax_xy.plot(pred[:16, 0], pred[:16, 1], color='purple', label='Early Steps (0~15)', linewidth=2)
-    # ax_xy.plot(pred[:12, 0], pred[:12, 1], color='yellow', label='Early Steps (0~11)', linewidth=2)
+    # ROS: x→纵向，y→横向（左为正）
+    # 绘图时将 (x, y) → (-y, x)
+    ax_xy.plot(-pred[:, 1], pred[:, 0], color=pred_color, label='Predicted (ROS frame)')
+    ax_xy.plot(-pred[:16, 1], pred[:16, 0], color='purple', label='Early Steps (0~15)', linewidth=2)
+
     if target_actions is not None:
-        ax_xy.plot(target_actions[:, 0], target_actions[:, 1], color=target_color, label='Target XY')
+        ax_xy.plot(-(target_actions[:, 1] - pred_base[1]),
+                   target_actions[:, 0] - pred_base[0],
+                   color=target_color, label='Target (ROS frame)')
     if smooth_actions is not None:
         base = smooth_actions[0, :2]
         smooth_xy = smooth_actions[:, :2] - base
-        ax_xy.plot(smooth_xy[:, 0], smooth_xy[:, 1], color=smooth_color, label='Smooth XY')
+        ax_xy.plot(-smooth_xy[:, 1], smooth_xy[:, 0],
+                   color=smooth_color, label='Smooth (ROS frame)')
+
     if human_position is not None:
-        ax_xy.scatter(human_position[0], human_position[2], color='red', s=50, label='End Point')
-        
+        # human_position: [x, _, y] → (-y, x)
+        ax_xy.scatter(-human_position[2], human_position[0],
+                      color='red', s=50, label='End Point')
+
     ax_xy.set_title(raw_lang)
-    ax_xy.set_xlabel('X')
-    ax_xy.set_ylabel('Y')
+    ax_xy.set_xlabel('Y')
+    ax_xy.set_ylabel('X ')
     ax_xy.legend()
     ax_xy.grid(True)
     ax_xy.set_aspect('equal')
 
-    # 设置 XY 统一视角范围
-    x_all = pred[:, 0]
-    y_all = pred[:, 1]
+    # === 设置 ROS 坐标范围 ===
+    x_all, y_all = pred[:, 0], pred[:, 1]
     max_range = 3
     x_center = (x_all.max() + x_all.min()) / 2
     y_center = (y_all.max() + y_all.min()) / 2
-    ax_xy.set_xlim(x_center - max_range / 2, x_center + max_range / 2)
-    ax_xy.set_ylim(y_center - max_range / 2, y_center + max_range / 2)
 
-    # # ===== Yaw plot =====
-    # ax_yaw.plot(pred[:, 2], color=pred_color, label='Predicted Yaw')
-    # ax_yaw.set_title(f'Yaw')
-    # ax_yaw.set_xlabel('Timestep')
-    # ax_yaw.set_ylabel('Yaw')
-    # ax_yaw.legend()
-    # ax_yaw.grid(True)
+    # 注意：x轴显示 -y，y轴显示 x
+    ax_xy.set_xlim(-(y_center + max_range / 2), -(y_center - max_range / 2))
+    ax_xy.set_ylim(x_center - max_range / 2, x_center + max_range / 2)
 
-    # ===== Save figure =====
+
+
+    # === 下方：Yaw 对比 ===
+    ax_yaw = fig.add_subplot(gs[1, :])  # 占满第二行
+    ax_yaw.plot(pred[:, 2], color=pred_color, label='Predicted Yaw')
+
+    if target_actions is not None:
+        ax_yaw.plot(target_actions[:, 2], color=target_color, label='Target Yaw')
+
+    ax_yaw.set_xlabel('Timestep')
+    ax_yaw.set_ylabel('Yaw (rad)')
+    ax_yaw.set_title(sub_reasoning if sub_reasoning is not None else "None")
+    ax_yaw.legend()
+    ax_yaw.grid(True)
+
+    # === 紧凑排版并生成图像 ===
     plt.tight_layout()
-    
-    # out_path = os.path.join(output_dir, f"{time}.png")  # 命名格式: frame_0000.png
-    # # cv2.imwrite(out_path, obs)
-    # plt.savefig(out_path)
-    # plt.close(fig)
-
-    # print(f"✅ Saved: {out_path}")
     canvas.draw()
     buf = canvas.buffer_rgba()
-    img_np = np.asarray(buf)[:, :, :3]  # 去掉 alpha 通道（RGB）
+    img_np = np.asarray(buf)[:, :, :3]
     plt.close(fig)
 
-    return img_np  # 返回 numpy 格式图像
+    return img_np
 
 import numpy as np
 import matplotlib.pyplot as plt

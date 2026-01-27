@@ -183,7 +183,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
             raw_lang = root['language_raw'][()].decode('utf-8')
             #wzj
             old_raw_lang = raw_lang
-            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            # raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
+            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, output the pixel  coordinate of your target on the last image."
             # instruction = root['instruction'][()].decode('utf-8')
         except Exception as e:
             # self.rank0_print(e)

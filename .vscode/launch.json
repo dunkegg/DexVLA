@@ -182,6 +182,22 @@
         ],
         "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
       },
+          {
+        "name": "eval_mimo",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/eval_follow_with_images_with_mimo.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "cwd": "${workspaceFolder}", 
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "3",       
+        },
+        "args": [
+          // "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_rxr.yaml"
+        ],
+        "python": "/mnt/pfs/3zpd5q/qwen2_5_vla/bin/python"  // 你的 conda 环境路径
+      },
       {
         "name": "follow split_task",
         "type": "python",
