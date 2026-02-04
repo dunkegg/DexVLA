@@ -26,7 +26,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
-
+import torch.distributed as dist
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
 from transformers.generation import GenerationMixin
@@ -1539,6 +1539,10 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
         self.vocab_size = config.vocab_size
         self.rope_deltas = None  # cache rope_deltas here
 
+        from transformers import AutoTokenizer
+        self.step=0
+        self.tokenizer = AutoTokenizer.from_pretrained(config.name_or_path, use_fast=True)
+
         # Initialize weights and apply final processing
         self.padding_side = "left"  # set it to left by default, user can use setter to change padding_sides
         self.using_film = config.using_film
@@ -1759,6 +1763,8 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
 
             return position_ids, mrope_position_deltas
 
+    def is_rank0(self):
+        return (not dist.is_initialized()) or dist.get_rank() == 0
     @add_start_docstrings_to_model_forward(QWEN2_5_VL_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=Qwen2_5_VLCausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
     def forward(
@@ -1932,13 +1938,60 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
         hidden_states = outputs[0]
         if tinyvla: # dex-vla supports tinyvla-style VLA
             return hidden_states
-        
+
+        # with torch.inference_mode():
         logits = self.lm_head(hidden_states)
+
+        if self.is_rank0() and self.step % 100 == 0:
+            with torch.no_grad():
+                token_ids = logits[0, :64].argmax(dim=-1)  # 只取前 64 token
+                text = self.tokenizer.decode(token_ids.tolist())
+                print("🔍 LLM output (head):", text)
+
         logits = logits.float()
 
         llm_loss = None
-
+        coord_loss = None
         if labels is not None:
+            # if self.is_rank0() and self.step % 100 == 0:
+            #     with torch.no_grad():
+            #         logits_pos = logits[0]   # [T, V]
+            #         labels_pos = labels[0]
+
+            #         for t in range(len(labels_pos)):
+            #             if labels_pos[t] == -100:
+            #                 continue
+
+            #             gt = labels_pos[t].item()
+            #             probs = torch.softmax(logits_pos[t], dim=-1)
+
+            #             print(
+            #                 f"step {self.step} | token {t} | "
+            #                 f"GT prob = {probs[gt]:.4f} | "
+            #                 f"GT token = {self.tokenizer.decode([gt])}"
+            #             )
+
+            #         # labels: [B, T]
+            #         label_ids = labels[0]
+
+            #         # 去掉 ignore_index
+            #         label_ids = label_ids[label_ids != -100]
+
+            #         # 🔒 限制最大解码长度（防止超长指令）
+            #         max_len = 128
+            #         if label_ids.numel() > max_len:
+            #             label_ids = label_ids[:max_len]
+
+            #         # 🔒 确保在 CPU 上 decode
+            #         label_ids = label_ids.detach().cpu().tolist()
+
+            #         text = self.tokenizer.decode(
+            #             label_ids,
+            #             skip_special_tokens=False
+            #         )
+
+            #         print("🧾 GT label text (head):", text)
+
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
@@ -1949,7 +2002,9 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
             llm_loss = loss_fct(shift_logits, shift_labels)
+            coord_loss = self.compute_coord_loss(logits, labels, self.tokenizer)
 
+        self.step += 1
         if is_eval:
             loss = None
             if not return_dict:
@@ -1965,21 +2020,36 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
                 rope_deltas=rope_deltas,
             )
         
+        coord_loss_weight = 2.0
+        total_loss = self.llm_loss_weight * llm_loss
+        if coord_loss is not None:
+            total_loss = total_loss + coord_loss_weight * coord_loss
+
+        loss = {
+            'loss': total_loss,
+            'llm_loss': llm_loss,
+        }
+
+        if coord_loss is not None:
+            loss['coord_loss'] = coord_loss
+
+        # loss = {'loss': self.llm_loss_weight * llm_loss,
+        #         'llm_loss': llm_loss}
         if self.using_film:
-            print("wzj using film")
+            # print("wzj using film")
             action_hidden_states = self.film_forward(labels=labels, input_ids=input_ids,
                                                      hidden_states=hidden_states)
         else: 
             action_hidden_states = hidden_states
 
-        ret = self.policy_head(actions=actions, hidden_states=action_hidden_states, states=states, is_pad=is_pad)
+        # ret = self.policy_head(actions=actions, hidden_states=action_hidden_states, states=states, is_pad=is_pad)
         
-        loss = {'loss': 0.0*ret['loss'] + self.llm_loss_weight * llm_loss,
-                'llm_loss': llm_loss,
-                'action_loss': ret['loss']}
+        # loss = {'loss': ret['loss'] + self.llm_loss_weight * llm_loss,
+        #         'llm_loss': llm_loss,
+        #         'action_loss': ret['loss']}
         
-        if ret["reconstructed_action"] is not None:
-            plot_actions(ret["reconstructed_action"], ret["noise_pred"].detach(), actions,  float(ret['loss'].detach().cpu()) ,ret["steps"])
+        # if ret["reconstructed_action"] is not None:
+        #     plot_actions(ret["reconstructed_action"], ret["noise_pred"].detach(), actions,  float(ret['loss'].detach().cpu()) ,ret["steps"])
         
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -2005,7 +2075,115 @@ class Qwen2_5_VLForConditionalGenerationForVLA(Qwen2_5_VLPreTrainedModel, Genera
             attentions=outputs.attentions,
             rope_deltas=self.rope_deltas,
         )
-    
+        
+    def compute_coord_loss(
+        self,
+        logits,          # [B, T, V]
+        labels,          # [B, T], with -100 ignore
+        tokenizer,
+        digit_weight=5.0,
+        keyword_weight=3.0,
+        struct_weight=4.0,
+    ):
+        """
+        Enforces:
+        MOVE/(num,num)<|im_end|>
+        STOP/(0,0)<|im_end|>
+        """
+
+        device = logits.device
+        vocab_size = logits.size(-1)
+        IGNORE = -100
+
+        # ===== token ids =====
+        tok = tokenizer
+        digit_ids = set(tok.convert_tokens_to_ids([str(i) for i in range(10)]))
+
+        MOVE = tok.convert_tokens_to_ids("MOVE")
+        STOP = tok.convert_tokens_to_ids("STOP")
+        SLASH = tok.convert_tokens_to_ids("/")
+        LP = tok.convert_tokens_to_ids("(")
+        RP = tok.convert_tokens_to_ids(")")
+        COMMA = tok.convert_tokens_to_ids(",")
+        IM_END = tok.convert_tokens_to_ids("<|im_end|>")
+
+        allowed_ids = digit_ids | {
+            MOVE, STOP, SLASH, LP, RP, COMMA, IM_END
+        }
+
+        labels_masked = labels.clone()
+
+        B, T = labels.shape
+
+        for b in range(B):
+            seq = labels[b]
+
+            for t in range(T):
+                cur = seq[t].item()
+                if cur == IGNORE:
+                    continue
+
+                # ---- 禁止非法 token ----
+                if cur not in allowed_ids:
+                    labels_masked[b, t] = IGNORE
+                    continue
+
+                # ---- "(" 后必须是 digit ----
+                if cur == LP:
+                    if t + 1 < T and seq[t + 1] not in digit_ids:
+                        labels_masked[b, t + 1] = IGNORE
+
+                # ---- "," 前后都必须是 digit ----
+                if cur == COMMA:
+                    if t - 1 >= 0 and seq[t - 1] not in digit_ids:
+                        labels_masked[b, t] = IGNORE
+                    if t + 1 < T and seq[t + 1] not in digit_ids:
+                        labels_masked[b, t + 1] = IGNORE
+
+                # ---- ")" 前必须是 digit ----
+                if cur == RP:
+                    if t - 1 >= 0 and seq[t - 1] not in digit_ids:
+                        labels_masked[b, t] = IGNORE
+
+                # ---- <|im_end|> 之后不允许再有 token ----
+                if cur == IM_END:
+                    for k in range(t + 1, T):
+                        labels_masked[b, k] = IGNORE
+
+        # ===== causal shift =====
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels_masked[..., 1:].contiguous()
+
+        # ===== token weights =====
+        weights = torch.ones_like(shift_labels, dtype=torch.float, device=device)
+
+        weights[shift_labels == MOVE] = keyword_weight
+        weights[shift_labels == STOP] = keyword_weight
+
+        for d in digit_ids:
+            weights[shift_labels == d] = digit_weight
+
+        weights[shift_labels == SLASH] = struct_weight
+        weights[shift_labels == LP] = struct_weight
+        weights[shift_labels == RP] = struct_weight
+        weights[shift_labels == COMMA] = struct_weight
+        weights[shift_labels == IM_END] = struct_weight
+
+        # ===== CE =====
+        loss_fct = torch.nn.CrossEntropyLoss(
+            reduction="none",
+            ignore_index=IGNORE
+        )
+
+        loss_per_token = loss_fct(
+            shift_logits.view(-1, vocab_size),
+            shift_labels.view(-1)
+        )
+
+        loss = (loss_per_token * weights.view(-1)).mean()
+        return loss
+
+
     def film_forward(self, labels, input_ids, hidden_states):
         """
         Perform the forward pass for the film module.

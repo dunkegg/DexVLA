@@ -1,5 +1,6 @@
 from PIL import Image
 import numpy as np
+import re
 from torchvision.transforms.functional import to_pil_image, to_tensor
 import torchvision.transforms as transforms
 import torch
@@ -62,7 +63,21 @@ class Qwen2VLAProcess:
             ele['resized_width'] = each.width
         each = fetch_image(ele)
         return torch.from_numpy(np.array(each)) 
+    
 
+    def xy_str_to_token_str(self, s: str,  resize: int) -> str:
+        """
+        '(86,78)' -> 'X_86 Y_78'
+        '( 86 , 78 )' 也支持
+        """
+        nums = re.findall(r"-?\d+", s)
+        if len(nums) != 2:
+            raise ValueError(f"Invalid xy string: {s}")
+        x, y = nums
+        x = int(int(x)/resize)
+        y = int(int(y)/resize)
+        # return f"X_{x} Y_{y}"
+        return f"({x},{y})"
     def forward_process(self, sample, use_reasoning=True):
         video = False
         # video = True
@@ -104,7 +119,14 @@ class Qwen2VLAProcess:
         )
         input_labels = torch.ones_like(model_inputs['input_ids']) * -100
         if use_reasoning:
-            answer =  "Next action:" + sample['reasoning'] + '<|im_end|>'
+            # answer =  "Next action:" + sample['reasoning'] + '<|im_end|>'
+            if 'STOP' not in sample['reasoning']:
+                new_coord = self.xy_str_to_token_str(sample['reasoning'], 4)
+                answer = f'MOVE/{new_coord}'+ '<|im_end|>'
+
+            else:
+                answer = 'STOP'+ '<|im_end|>'
+
         else:
             answer = '' + '<|im_end|>'
 

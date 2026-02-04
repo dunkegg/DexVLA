@@ -66,7 +66,7 @@
         "name": "Debug train follow",
         "type": "python",
         "request": "launch",
-        "program": "${workspaceFolder}/train_vla.py",
+        "program": "${workspaceFolder}/train_qwen2_5_vla.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "cwd": "${workspaceFolder}", 
@@ -74,7 +74,7 @@
             "CUDA_VISIBLE_DEVICES": "0"
         },
         "args": [
-          "--use_reasoning", "False",
+          "--use_reasoning", "True",
           "--lora_enable", "False",
           "--action_dim", "3",
           "--state_dim", "3",
@@ -84,11 +84,11 @@
           "--pretrain_dit_path", "checkpoints/ScaleDP/open_scale_dp_h_backbone.ckpt",
           "--policy_head_type", "scale_dp_policy",
           "--policy_head_size", "ScaleDP_H",
-          "--image_size_stable", "(320,240)",
-          "--image_size_wrist", "(320,240)",
-          "--history_images_length", "9",
-          "--task_name", "mirror_single",
-          "--model_name_or_path", "checkpoints/qwen2_vl",
+          "--image_size_stable", "(320,180)",
+          "--image_size_wrist", "(320,180)",
+          "--history_images_length", "0",
+          "--task_name", "follow_pixel",
+          "--model_name_or_path", "checkpoints/qwen2_5_vl",
           "--version", "v0",
           "--enable_distilbert", "False",
           "--tune_mm_mlp_adapter", "True",
@@ -99,11 +99,12 @@
           "--image_aspect_ratio", "pad",
           "--bf16", "True",
           "--output_dir", "OUTPUT/debug",
-          "--max_steps", "80000",
-          "--per_device_train_batch_size", "1",
+          "--norm_json_path", "data/split_data/single_follow_pixel/norm_status.json",
+          "--max_steps", "10000",
+          "--per_device_train_batch_size", "4",
           "--gradient_accumulation_steps", "1",
           "--save_strategy", "steps",
-          "--save_steps", "10000",
+          "--save_steps", "5000",
           "--save_total_limit", "50",
           "--learning_rate", "2e-5",
           "--weight_decay", "0.",
@@ -121,7 +122,7 @@
           "--report_to", "tensorboard",
           "--logging_dir", "OUTPUT/log"
         ],
-        "python": "/opt/conda/envs/qwen2_5_vla/bin/python"
+        "python": "/mnt/pfs/3zpd5q/qwen2_5_vla/bin/python"
       },
       {
         "name": "label",
@@ -167,7 +168,7 @@
       },
 
       {
-        "name": "eval",
+        "name": "eval_data",
         "type": "python",
         "request": "launch",
         "program": "${workspaceFolder}/eval_follow_with_data.py",
@@ -178,9 +179,9 @@
           "CUDA_VISIBLE_DEVICES": "3",       
         },
         "args": [
-          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_rxr.yaml"
+          "--yaml_file_path", "habitat_for_sim/cfg/exp_eval_single.yaml"
         ],
-        "python": "/mnt/pfs/3zpd5q/habitat_env/bin/python"  // 你的 conda 环境路径
+        "python": "/mnt/pfs/3zpd5q/qwen2_5_vla/bin/python"  // 你的 conda 环境路径
       },
           {
         "name": "eval_mimo",

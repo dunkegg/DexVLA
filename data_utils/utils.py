@@ -184,7 +184,12 @@ class EpisodicDataset(torch.utils.data.Dataset):
             #wzj
             old_raw_lang = raw_lang
             # raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
-            raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, output the pixel  coordinate of your target on the last image."
+            # raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, output the pixel  coordinate of your target on the last image."
+            raw_lang = f"""You are an autonomous navigation assistant.
+            Your task is to <{raw_lang}>. 
+            Where should you go next to stay on track? 
+            Please output the target's pixel coordinates (W, H) in the image in this format Format: MOVE/(number, number). 
+            Please output 'STOP' when you have successfully completed the task."""
             # instruction = root['instruction'][()].decode('utf-8')
         except Exception as e:
             # self.rank0_print(e)
@@ -254,7 +259,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         # if not self.train_type:
         img_path = obs_img.decode('utf-8')
-        img_path = img_path.replace("/mnt/pfs/3zpd5q/", "/mnt/pfs/s7fsio/")
+        # img_path = img_path.replace("/mnt/pfs/3zpd5q/", "/mnt/pfs/s7fsio/")
         img = cv2.imread(img_path)
         if mirror:
             img = cv2.flip(img, 1)

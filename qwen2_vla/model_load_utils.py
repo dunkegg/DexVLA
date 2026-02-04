@@ -49,7 +49,7 @@ def load_model(config=None, qwen2_vla_config=None, rank0_print=print, tokenizer=
         pass
         kwargs = {"device_map": "cuda", "torch_dtype": torch.bfloat16}
         rank0_print(f"@@@@@@@Loading pretrain weights...@@@@@@@@@@")
-        assert config['model_args'].model_pretrain is not "", "load pretrain weights need set the model_pretrain in DataArguments!!!!"
+        assert config['model_args'].model_pretrain != "", "load pretrain weights need set the model_pretrain in DataArguments!!!!"
         # models = load_pretrained_model(config['model_args'].model_pretrain, config['model_args'].model_name_or_path, model_name, False, False)
         model_path = config['model_args'].model_pretrain
         model_base = config['model_args'].model_name_or_path

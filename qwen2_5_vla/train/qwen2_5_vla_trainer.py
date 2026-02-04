@@ -691,6 +691,7 @@ class QWen2VLATrainer(Trainer):
         custom_loss = {
             'llm_loss': torch.tensor(0.0).to(args.device),
             'action_loss': torch.tensor(0.0).to(args.device),
+            'coord_loss': torch.tensor(0.0).to(args.device),
         }
         ##################################################################################
         # _total_loss_scalar is updated everytime .item() has to be called on tr_loss and stores the sum of all losses
@@ -983,6 +984,7 @@ class QWen2VLATrainer(Trainer):
             custom_loss = {
                 'llm_loss': torch.tensor(0.0).to(tr_loss.device),
                 'action_loss': torch.tensor(0.0).to(tr_loss.device),
+                'coord_loss': torch.tensor(0.0).to(tr_loss.device),
             }
             for k,v in all_loss.items():
                 if k == 'loss':

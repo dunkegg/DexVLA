@@ -5,10 +5,11 @@ exp_name: view_sample
 scenes_data_path: /mnt/pfs/3zpd5q/goat_bench/data/scene_datasets/hm3d/train
 json_file_path: /mnt/pfs/3zpd5q/goat_bench/data/datasets/goat_bench/hm3d/v1/train/content
 human_data: human_follower/humanoid_data
-model_path: OUTPUT/single_follow_normal/checkpoint-20000
-# model_path: OUTPUT/single_follow_normal/checkpoint-20000
-
-
+model_path: /mnt/pfs/3zpd5q/code/mimo/DexVLA/OUTPUT/qwen2_5_single_follow_pixel_with_endtoken/checkpoint-10000
+# model_path: /mnt/pfs/3zpd5q/code/train/DexVLA/OUTPUT/qwen2_follow_real_finetune_on_sample_mirror_robot/checkpoint-4000
+human_description: "character_descriptions_new.json"
+proc_data_path: /mnt/pfs/3zpd5q/code/eval/DexVLA/data/proc_data/single_follow_pixel
+image_lens: 1
 max_episodes: 1000
 multi_humanoids: false
 
@@ -40,6 +41,6 @@ visual_prompt:
   circle_radius: 18
 
 
-img_output_dir: eval_plot_single_follow_normal
+img_output_dir: eval_plot_single_follow_pixel
 video_output_dir: results_eval_single_follow_normal
 log_path: null

@@ -1,4 +1,4 @@
-from qwen2_vla.model_load_utils import load_model_for_eval
+from qwen2_5_vla.model_load_utils import load_model_for_eval
 from torchvision import transforms
 import pickle
 import time
@@ -9,7 +9,40 @@ from qwen2_vla.utils.image_processing_qwen2_vla import *
 import h5py
 import cv2
 from evaluate.visualize_action import plot_actions, plot_obs
-from habitat_for_sim.utils.goat import read_yaml
+import yaml
+class Config:
+    """
+    允许通过属性访问字典内容的配置类。
+    """
+    def __init__(self, config_dict):
+        self._config = config_dict
+
+    def __getattr__(self, name):
+        value = self._config.get(name)
+        if isinstance(value, dict):
+            return Config(value)
+        return value
+
+    def __setattr__(self, name, value):
+        if name == "_config":
+            super().__setattr__(name, value)
+        else:
+            self._config[name] = value
+
+    def to_dict(self):
+        """将 Config 对象转换回字典。"""
+        return self._config
+def read_yaml(file_path):
+    """
+    读取 YAML 文件内容并返回可通过属性访问的配置对象。
+
+    :param file_path: str, YAML 文件路径
+    :return: Config, 配置对象
+    """
+    with open(file_path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    return Config(data)
+
 
 def pre_process(robot_state_value, key, stats):
     tmp = robot_state_value
@@ -133,6 +166,16 @@ def visualize_trajectory(cv_image, all_actions, instruction=""):
 
     return img
 
+def token_str_to_xy(s: str, resize: int):
+    """
+    'X_86 Y_78' -> (86, 78)
+    """
+    import re
+    x = re.search(r"X_(-?\d+)", s)
+    y = re.search(r"Y_(-?\d+)", s)
+    if x is None or y is None:
+        return None
+    return int(x.group(1)*resize), int(y.group(1)*resize)
 
 
 class qwen2_vla_policy:
@@ -312,7 +355,7 @@ class FakeRobotEnv():
 def extract_obs_and_paths(h5_file_path):
     results = {}
     with h5py.File(h5_file_path, 'r') as f:
-        frame_paths_ds = f['frame_paths']
+        frame_paths_ds = f['rgb_frame_paths']
         frame_paths_raw = frame_paths_ds[:]  # 获取原始数据
 
         # 判断是否需要 decode（HDF5 字符串有时是 bytes）
@@ -434,8 +477,13 @@ if __name__ == '__main__':
             raw_lang = ep_data["raw_lang"]
             description = raw_lang
             raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, predict your future movement trajectory."
-            
-            
+            # raw_lang = f"Your task is: {raw_lang}. You are given a sequence of historical visual observations in temporal order (earliest first, latest last). Based on this sequence, output the pixel  coordinate of your target on the last image."
+                      
+            raw_lang = f"""You are an autonomous navigation assistant.
+            Your task is to <{raw_lang}>. 
+            Where should you go next to stay on track? 
+            Please output the target's pixel coordinates in the image in this format Format: X_<number> Y_<number>. 
+            Please output STOP when you have successfully completed the task."""
             frames = get_history_frames(frames_paths, ep_data["obs_idx"]-1, n_frames)
             compressed = False
             images = []
